@@ -152,7 +152,13 @@ function readLines(stream, onLine, onChunk) {
 
 async function runCapture(spec, args, options = {}) {
   return new Promise((resolve) => {
-    const child = spawnCli(spec, args, options);
+    let child;
+    try {
+      child = spawnCli(spec, args, options);
+    } catch (error) {
+      resolve({ exitCode: -1, stdout: '', stderr: error.message });
+      return;
+    }
     let stdout = '';
     let stderr = '';
     let settled = false;

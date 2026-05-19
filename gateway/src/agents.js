@@ -354,7 +354,19 @@ function runJsonCli({
   onAgentSessionId,
   onExit,
 }) {
-  const child = spawnCli(command, args, { cwd });
+  let child;
+  try {
+    child = spawnCli(command, args, { cwd });
+  } catch (error) {
+    onExit({
+      exitCode: -1,
+      error: error.message,
+    });
+    return {
+      pid: null,
+      abort() {},
+    };
+  }
   const state = {
     lastFullTextByKey: new Map(),
     sawText: false,

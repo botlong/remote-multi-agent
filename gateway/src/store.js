@@ -8,6 +8,7 @@ const path = require('node:path');
 class JsonStore {
   constructor(file) {
     this.file = file;
+    this.saveQueue = Promise.resolve();
     this.data = {
       projects: [],
       sessions: [],
@@ -35,8 +36,17 @@ class JsonStore {
   }
 
   async save() {
+    const run = this.saveQueue.then(
+      () => this.writeSnapshot(),
+      () => this.writeSnapshot(),
+    );
+    this.saveQueue = run.catch(() => {});
+    return run;
+  }
+
+  async writeSnapshot() {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
-    const temp = `${this.file}.${process.pid}.${Date.now()}.tmp`;
+    const temp = `${this.file}.${process.pid}.${crypto.randomUUID()}.tmp`;
     await fs.writeFile(temp, `${JSON.stringify(this.data, null, 2)}\n`, 'utf8');
     await fs.rename(temp, this.file);
   }

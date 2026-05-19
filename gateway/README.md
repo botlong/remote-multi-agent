@@ -32,6 +32,10 @@ $env:GATEWAY_PORT='4096'
 npm start
 ```
 
+The first gateway version has no authentication, matching
+`docs/development-spec.md`. Bind to `127.0.0.1` by default, and expose
+`0.0.0.0` only behind a trusted network such as Tailscale.
+
 ## Configuration
 
 | Variable | Purpose |
