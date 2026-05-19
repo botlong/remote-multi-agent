@@ -1,0 +1,14 @@
+{
+  "name": "remote-multi-agent-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local gateway for Claude Code, Codex, and OpenCode CLIs.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  }
+}

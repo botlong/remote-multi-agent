@@ -53,10 +53,9 @@ class ProjectListPage extends ConsumerWidget {
 
   Future<void> _addProject(BuildContext context, WidgetRef ref) async {
     final settings = ref.read(settingsControllerProvider);
-    final gatewayUrl = 'http://${Uri.parse(settings.baseUrl).host}:8787';
     final directory = await showDirectoryPicker(
       context,
-      qqbotBaseUrl: gatewayUrl,
+      gatewayBaseUrl: settings.baseUrl,
       bearerToken: settings.bearerToken,
       initialPath: 'D:\\',
     );

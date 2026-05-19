@@ -1,32 +1,34 @@
 # remote_multi_agent
 
-A Flutter mobile client for [OpenCode](https://opencode.ai). Connects to a
-remote OpenCode server (running on your laptop), tails its `/event` SSE stream,
-and renders the live message + tool + reasoning flow on your phone.
+A Flutter mobile client for local coding agents. It connects to the gateway
+running on your laptop, streams normalized agent events, and renders Codex,
+Claude Code, and OpenCode sessions in one project workspace.
 
 ## Why
 
 - OpenClaw + 一来一回式 IM bots can't show you the agent's *progress* — only
   the final answer.
-- OpenCode emits a structured live event stream (`message.updated`,
-  `message.part.updated`, etc.) that is perfect for a real-time mobile UI.
-- This app is a thin client: it carries no model keys; the OpenCode server you
-  point it at owns provider auth.
+- Agent CLIs emit progress, tool use, and final answers; the gateway normalizes
+  that stream into one app protocol.
+- This app is a thin client: it carries no model keys; your local gateway owns
+  provider auth and project filesystem access.
 
 ## Architecture
 
-```
-[Phone]      remote_multi_agent (this app)
-                 │ HTTPS / Bearer token
-                 ▼
+```text
+[Phone]      remote_multi_agent (Flutter)
+                 HTTPS / SSE
+                 |
 [Tailscale]  100.x.x.x:4096
-                 │
-                 ▼
-[Laptop]     opencode serve --port 4096 --hostname 0.0.0.0
-                 │
-                 ▼
-             AI provider of your choice (Anthropic, OpenAI, local, …)
+                 |
+[Laptop]     gateway/ Node server
+                 |
+             Codex CLI / Claude Code CLI / OpenCode CLI
 ```
+
+The gateway in `gateway/` owns local project directories, sessions, CLI
+processes, and event normalization. The Flutter app does not execute shell
+commands or read project files directly.
 
 ## Run / build matrix
 

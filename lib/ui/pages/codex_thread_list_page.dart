@@ -75,7 +75,7 @@ class CodexThreadListPage extends ConsumerWidget {
     final qqbotUrl = 'http://${Uri.parse(settings.baseUrl).host}:8787';
     final dir = await showDirectoryPicker(
       context,
-      qqbotBaseUrl: qqbotUrl,
+      gatewayBaseUrl: qqbotUrl,
       bearerToken: settings.bearerToken,
       initialPath: 'D:\\',
     );

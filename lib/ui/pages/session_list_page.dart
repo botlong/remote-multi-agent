@@ -65,7 +65,7 @@ class SessionListPage extends ConsumerWidget {
 
     final selectedDir = await showDirectoryPicker(
       context,
-      qqbotBaseUrl: qqbotUrl,
+      gatewayBaseUrl: qqbotUrl,
       bearerToken: 'qqbot-dev-token-please-rotate-me',
       initialPath: 'D:\\',
     );

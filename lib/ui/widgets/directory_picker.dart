@@ -1,5 +1,5 @@
-/// Bottom-sheet directory picker that browses the remote computer's file system
-/// via the QQBot server's `/files/dirs` endpoint.
+/// Bottom-sheet directory picker that browses the gateway host's file system
+/// via the gateway `/files/dirs` endpoint.
 ///
 /// Features:
 ///   - Browse directories on the remote machine
@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 /// or null if dismissed.
 Future<String?> showDirectoryPicker(
   BuildContext context, {
-  required String qqbotBaseUrl,
+  required String gatewayBaseUrl,
   required String bearerToken,
   String? initialPath,
 }) {
@@ -24,7 +24,7 @@ Future<String?> showDirectoryPicker(
     showDragHandle: true,
     useSafeArea: true,
     builder: (_) => _DirectoryPickerSheet(
-      qqbotBaseUrl: qqbotBaseUrl,
+      gatewayBaseUrl: gatewayBaseUrl,
       bearerToken: bearerToken,
       initialPath: initialPath ?? 'D:\\',
     ),
@@ -33,12 +33,12 @@ Future<String?> showDirectoryPicker(
 
 class _DirectoryPickerSheet extends StatefulWidget {
   const _DirectoryPickerSheet({
-    required this.qqbotBaseUrl,
+    required this.gatewayBaseUrl,
     required this.bearerToken,
     required this.initialPath,
   });
 
-  final String qqbotBaseUrl;
+  final String gatewayBaseUrl;
   final String bearerToken;
   final String initialPath;
 
@@ -62,7 +62,7 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
     _currentPath = widget.initialPath;
     _dio = Dio(
       BaseOptions(
-        baseUrl: widget.qqbotBaseUrl.replaceAll(RegExp(r'/$'), ''),
+        baseUrl: widget.gatewayBaseUrl.replaceAll(RegExp(r'/$'), ''),
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
         headers: {
