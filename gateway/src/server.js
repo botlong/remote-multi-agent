@@ -18,6 +18,15 @@ const {
 async function createGatewayServer({ dataFile, adapters } = {}) {
   const store = new JsonStore(dataFile);
   await store.load();
+
+  // Reset sessions stuck in 'running' from a previous crash/restart.
+  for (const session of store.data.sessions) {
+    if (session.status === 'running') {
+      session.status = 'idle';
+    }
+  }
+  await store.save();
+
   const registry = adapters || new AgentRegistry();
   const bus = new EventBus();
   const activeRuns = new Map();

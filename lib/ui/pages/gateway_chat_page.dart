@@ -45,7 +45,8 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
   }
 
   void _onInputChanged() {
-    final shouldShow = _input.text.startsWith('/');
+    final text = _input.text;
+    final shouldShow = text.startsWith('/') || text.startsWith(r'$');
     if (shouldShow != _showCommands) {
       setState(() => _showCommands = shouldShow);
     }
@@ -143,6 +144,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
                         TextSelection.collapsed(offset: _input.text.length);
                     _focus.requestFocus();
                   },
+                  maxHeight: 280,
                 );
               },
             ),
@@ -172,7 +174,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
     List<GatewayCommandView> commands,
   ) {
     final query = _input.text.trim();
-    if (query == '/') return commands;
+    if (query == '/' || query == r'$') return commands;
     return commands.where((c) => c.name.startsWith(query)).toList();
   }
 
@@ -237,58 +239,90 @@ class _CommandSuggestions extends StatelessWidget {
   const _CommandSuggestions({
     required this.commands,
     required this.onSelected,
+    this.maxHeight = 280,
   });
 
   final List<GatewayCommandView> commands;
   final ValueChanged<GatewayCommandView> onSelected;
+  final double maxHeight;
+
+  IconData _iconFor(String name) {
+    if (name.startsWith(r'$')) return Icons.terminal;
+    return switch (name) {
+      '/model' || '/models' || '/fast' => Icons.psychology_outlined,
+      '/compact' || '/summarize' => Icons.compress,
+      '/clear' || '/new' => Icons.cleaning_services_outlined,
+      '/help' => Icons.help_outline,
+      '/status' => Icons.info_outline,
+      '/mcp' => Icons.settings_ethernet,
+      '/permissions' => Icons.security,
+      '/plan' || '/goal' => Icons.flag_outlined,
+      '/feedback' || '/review' || '/bug' => Icons.rate_review_outlined,
+      '/fork' || '/side' => Icons.call_split,
+      '/init' => Icons.play_arrow_outlined,
+      '/stop' || '/exit' || '/quit' || '/q' => Icons.stop_outlined,
+      '/undo' => Icons.undo,
+      '/redo' => Icons.redo,
+      '/diff' || '/copy' => Icons.content_copy_outlined,
+      '/memories' || '/memory' => Icons.bookmark_outline,
+      '/personality' => Icons.face_outlined,
+      '/login' || '/logout' => Icons.login,
+      '/agent' || '/agents' => Icons.smart_toy_outlined,
+      '/plugins' || '/hooks' || '/apps' => Icons.extension_outlined,
+      _ => Icons.keyboard_command_key,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        child: SizedBox(
-          height: 112,
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            scrollDirection: Axis.horizontal,
-            itemCount: commands.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, index) {
-              final command = commands[index];
-              return SizedBox(
-                width: 220,
-                child: ActionChip(
-                  avatar: const Icon(Icons.keyboard_command_key, size: 16),
-                  label: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          command.name,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          shrinkWrap: true,
+          itemCount: commands.length,
+          itemBuilder: (_, index) {
+            final command = commands[index];
+            return InkWell(
+              onTap: () => onSelected(command),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      _iconFor(command.name),
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      command.name,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (command.description.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          command.description,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                        ),
-                        if (command.description.isNotEmpty)
-                          Text(
-                            command.description,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
-                      ],
-                    ),
-                  ),
-                  onPressed: () => onSelected(command),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -329,7 +363,7 @@ class _InputBar extends StatelessWidget {
                   minLines: 1,
                   maxLines: 6,
                   decoration: InputDecoration(
-                    hintText: 'Message or /command',
+                    hintText: 'Message, /command, or \$shell',
                     filled: true,
                     fillColor: theme.colorScheme.surfaceContainerHigh,
                     border: OutlineInputBorder(
@@ -384,39 +418,32 @@ GatewayAgentView? _agentFromCatalog(WidgetRef ref, String agentId) {
 }
 
 List<GatewayCommandView> _fallbackCommands(String agentId) {
-  final commands = switch (agentId) {
+  return switch (agentId) {
     'codex' => const [
-        '/permissions',
-        '/model',
-        '/fast',
-        '/plan',
-        '/status',
-        '/stop',
+        GatewayCommandView(name: '/model', description: 'Switch model'),
+        GatewayCommandView(name: '/fast', description: 'Switch to fast model'),
+        GatewayCommandView(name: '/plan', description: 'Plan a goal'),
+        GatewayCommandView(name: '/compact', description: 'Compress context'),
+        GatewayCommandView(name: '/status', description: 'Show status'),
+        GatewayCommandView(name: '/permissions', description: 'Manage permissions'),
+        GatewayCommandView(name: r'$', description: 'Run a shell command'),
       ],
     'claude-code' => const [
-        '/help',
-        '/clear',
-        '/compact',
-        '/model',
-        '/permissions',
-        '/status',
+        GatewayCommandView(name: '/model', description: 'Switch model'),
+        GatewayCommandView(name: '/compact', description: 'Compress context'),
+        GatewayCommandView(name: '/status', description: 'Show status'),
+        GatewayCommandView(name: '/help', description: 'Show help'),
+        GatewayCommandView(name: '/clear', description: 'Clear conversation'),
+        GatewayCommandView(name: '/permissions', description: 'Manage permissions'),
       ],
     'opencode' => const [
-        '/help',
-        '/new',
-        '/models',
-        '/compact',
-        '/undo',
-        '/redo',
+        GatewayCommandView(name: '/models', description: 'Show or switch models'),
+        GatewayCommandView(name: '/compact', description: 'Compress context'),
+        GatewayCommandView(name: '/help', description: 'Show help'),
+        GatewayCommandView(name: '/new', description: 'Start a new session'),
+        GatewayCommandView(name: '/undo', description: 'Undo last change'),
+        GatewayCommandView(name: '/redo', description: 'Redo last change'),
       ],
-    _ => const <String>[],
+    _ => const <GatewayCommandView>[],
   };
-  return commands
-      .map(
-        (command) => GatewayCommandView(
-          name: command,
-          description: '',
-        ),
-      )
-      .toList(growable: false);
 }
