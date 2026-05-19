@@ -115,12 +115,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _save() async {
     final controller = ref.read(settingsControllerProvider.notifier);
+    final current = ref.read(settingsControllerProvider);
     await controller.update(
       AppSettings(
         baseUrl: _baseUrlCtrl.text.trim(),
         bearerToken: _tokenCtrl.text.trim(),
         providerId: _providerId,
         modelId: _modelId,
+        themeMode: current.themeMode,
       ),
     );
     if (!mounted) return;
@@ -255,6 +257,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               onTap: _openModelPicker,
             ),
           ],
+          const SizedBox(height: 24),
+          Text('Appearance', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          _ThemeSelector(
+            current: ref.watch(settingsControllerProvider).themeMode,
+            onChanged: (mode) {
+              final ctrl = ref.read(settingsControllerProvider.notifier);
+              ctrl.update(
+                ref.read(settingsControllerProvider).copyWith(themeMode: mode),
+              );
+            },
+          ),
           const SizedBox(height: 32),
           if (widget.firstRun)
             FilledButton.tonal(
@@ -400,6 +414,41 @@ class _ModelTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ThemeSelector extends StatelessWidget {
+  const _ThemeSelector({
+    required this.current,
+    required this.onChanged,
+  });
+
+  final ThemeMode current;
+  final ValueChanged<ThemeMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<ThemeMode>(
+      segments: const [
+        ButtonSegment(
+          value: ThemeMode.system,
+          label: Text('System'),
+          icon: Icon(Icons.brightness_auto),
+        ),
+        ButtonSegment(
+          value: ThemeMode.light,
+          label: Text('Light'),
+          icon: Icon(Icons.light_mode),
+        ),
+        ButtonSegment(
+          value: ThemeMode.dark,
+          label: Text('Dark'),
+          icon: Icon(Icons.dark_mode),
+        ),
+      ],
+      selected: {current},
+      onSelectionChanged: (s) => onChanged(s.first),
     );
   }
 }

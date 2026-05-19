@@ -16,7 +16,10 @@ class OpencodeMobileApp extends ConsumerWidget {
       title: 'OpenCode Mobile',
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),
-      themeMode: ThemeMode.system,
+      themeMode: prefs.maybeWhen(
+        data: (_) => ref.watch(settingsControllerProvider).themeMode,
+        orElse: () => ThemeMode.system,
+      ),
       home: prefs.when(
         loading: () => const _SplashScreen(),
         error: (e, _) => _ErrorScreen(error: e),
