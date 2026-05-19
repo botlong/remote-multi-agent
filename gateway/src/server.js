@@ -69,6 +69,7 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
           request,
           response,
           segments,
+          url,
           store,
           registry,
         });
@@ -168,7 +169,7 @@ async function handleProjects({ request, response, segments, store, registry }) 
   throw httpError(404, 'not found');
 }
 
-async function handleAgents({ request, response, segments, store, registry }) {
+async function handleAgents({ request, response, segments, url, store, registry }) {
   if (segments.length === 1 && request.method === 'GET') {
     return sendJson(response, await registry.list());
   }
@@ -181,7 +182,10 @@ async function handleAgents({ request, response, segments, store, registry }) {
     return sendJson(response, { models: await adapter.models() });
   }
   if (segments.length === 3 && segments[2] === 'commands' && request.method === 'GET') {
-    const project = store.listProjects()[0];
+    const projectId = url.searchParams.get('projectId');
+    const project = projectId
+      ? store.getProject(projectId)
+      : store.listProjects()[0];
     return sendJson(response, {
       commands: await adapter.commands(project?.directory),
     });
@@ -392,6 +396,23 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
     await textWrite;
     if (assistantMessage) {
       const finalStatus = exitCode === 0 || aborted ? 'completed' : 'error';
+      const errorText = error || `agent exited with code ${exitCode}`;
+      if (finalStatus === 'error' && !messageText(assistantMessage).trim()) {
+        assistantMessage = appendTextToMessage(assistantMessage, errorText);
+        await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
+        emit(
+          bus,
+          'message.delta',
+          running,
+          {
+            messageId: assistantMessage.id,
+            partId: assistantMessage.parts?.[0]?.id || partId,
+            field: 'text',
+            delta: errorText,
+          },
+          { delta: errorText },
+        );
+      }
       assistantMessage = completeMessage(assistantMessage, finalStatus);
       await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
     }
@@ -425,6 +446,12 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
     }
     emit(bus, 'session.updated', updated, { session: updated });
   }
+}
+
+function messageText(message) {
+  return (message.parts || [])
+    .map((part) => (typeof part.text === 'string' ? part.text : ''))
+    .join('');
 }
 
 function emit(bus, type, session, data = {}, raw = {}) {

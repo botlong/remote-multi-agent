@@ -200,14 +200,14 @@ async function parseSse(response, signal, onEvent) {
         if (rawLine.startsWith(':')) continue;
         const colon = rawLine.indexOf(':');
         const field = colon === -1 ? rawLine : rawLine.slice(0, colon);
-        const value =
+        const fieldValue =
           colon === -1
             ? ''
             : rawLine[colon + 1] === ' '
               ? rawLine.slice(colon + 2)
               : rawLine.slice(colon + 1);
-        if (field === 'event') eventName = value || 'message';
-        if (field === 'data') dataLines.push(value);
+        if (field === 'event') eventName = fieldValue || 'message';
+        if (field === 'data') dataLines.push(fieldValue);
       }
     }
     dispatchSseEvent(eventName, dataLines, onEvent);

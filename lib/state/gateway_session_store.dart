@@ -27,6 +27,7 @@ class GatewaySessionState {
     String? projectId,
     List<GatewaySession>? sessions,
     String? selectedSessionId,
+    bool clearSelectedSession = false,
     bool? loading,
     String? error,
     bool clearError = false,
@@ -34,7 +35,9 @@ class GatewaySessionState {
       GatewaySessionState(
         projectId: projectId ?? this.projectId,
         sessions: sessions ?? this.sessions,
-        selectedSessionId: selectedSessionId ?? this.selectedSessionId,
+        selectedSessionId: clearSelectedSession
+            ? null
+            : (selectedSessionId ?? this.selectedSessionId),
         loading: loading ?? this.loading,
         error: clearError ? null : (error ?? this.error),
       );

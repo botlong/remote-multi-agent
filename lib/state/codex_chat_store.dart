@@ -120,6 +120,7 @@ class CodexChatController extends StateNotifier<CodexChatState> {
   StreamSubscription<CodexEvent>? _sub;
   String? _activeAssistantMessageId;
   int _userMsgCounter = 0;
+  int _asstMsgCounter = 0;
   int _itemSeq = 0;
 
   /// Send a prompt. If [threadId] is empty, this starts a new thread; the
@@ -161,7 +162,7 @@ class CodexChatController extends StateNotifier<CodexChatState> {
 
     // 2) Pre-create the assistant message so streaming parts can attach.
     final asstId =
-        'a_${++_userMsgCounter}_${DateTime.now().microsecondsSinceEpoch}';
+        'a_${++_asstMsgCounter}_${DateTime.now().microsecondsSinceEpoch}';
     _activeAssistantMessageId = asstId;
     final asst = Message(
       id: asstId,

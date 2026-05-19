@@ -68,8 +68,8 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     required String sessionId,
   })  : _client = client,
         super(GatewayChatState.initial(sessionId)) {
-    _load();
     _bindEvents();
+    _load();
   }
 
   final GatewayClient _client;
@@ -79,18 +79,23 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     try {
       final session = await _client.getSession(state.sessionId);
       final rawMessages = await _client.listMessages(state.sessionId);
+      // Re-read state.messages after await — SSE events may have arrived.
       final next = Map<String, Message>.from(state.messages);
       for (final json in rawMessages) {
         final message = Message.fromJson(json);
         if (message.id.isNotEmpty) {
           final existing = next[message.id];
+          // Only use REST data if SSE hasn't already provided more parts.
           if (existing == null ||
-              message.parts.length >= existing.parts.length) {
+              (message.parts.length > existing.parts.length)) {
             next[message.id] = message;
           }
         }
       }
-      state = state.copyWith(session: session, messages: next);
+      state = state.copyWith(
+        session: state.session ?? session,
+        messages: next,
+      );
     } catch (error) {
       state = state.copyWith(error: error.toString());
     }

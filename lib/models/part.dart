@@ -78,9 +78,17 @@ sealed class Part {
           path: json['path'] as String?,
         );
       case 'step-start':
-        return const StepStartPart._raw();
+        return StepStartPart(
+          id: id,
+          messageId: messageId,
+          sessionId: sessionId,
+        );
       case 'step-finish':
-        return const StepFinishPart._raw();
+        return StepFinishPart(
+          id: id,
+          messageId: messageId,
+          sessionId: sessionId,
+        );
       default:
         return UnknownPart(
           id: id,
@@ -210,13 +218,19 @@ class FilePart extends Part {
 
 /// LLM step boundary markers — useful for separating "turns" inside one message.
 class StepStartPart extends Part {
-  const StepStartPart._raw()
-      : super(id: '_step_start', messageId: '', sessionId: '');
+  const StepStartPart({
+    required super.id,
+    required super.messageId,
+    required super.sessionId,
+  });
 }
 
 class StepFinishPart extends Part {
-  const StepFinishPart._raw()
-      : super(id: '_step_finish', messageId: '', sessionId: '');
+  const StepFinishPart({
+    required super.id,
+    required super.messageId,
+    required super.sessionId,
+  });
 }
 
 /// Fallback for parts whose type we don't yet know how to render. We keep the

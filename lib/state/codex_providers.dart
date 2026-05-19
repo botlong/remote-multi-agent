@@ -37,7 +37,8 @@ final codexChatProvider = StateNotifierProvider.autoDispose
     .family<CodexChatController, CodexChatState, String>((ref, localKey) {
   final client = ref.watch(codexClientProvider);
   final list = ref.read(codexThreadListProvider).items;
-  final t = list.where((e) => e.localKey == localKey).firstOrNull;
+  final matches = list.where((e) => e.localKey == localKey);
+  final t = matches.isEmpty ? null : matches.first;
   return CodexChatController(
     client: client,
     localKey: localKey,
@@ -45,10 +46,3 @@ final codexChatProvider = StateNotifierProvider.autoDispose
     directory: t?.directory ?? '',
   );
 });
-
-extension _Iterable<E> on Iterable<E> {
-  E? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
-  }
-}

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/gateway_providers.dart';
 import '../widgets/agent_badge.dart';
+import '../widgets/model_picker.dart';
 import 'gateway_chat_page.dart';
 import 'gateway_ui_adapters.dart';
 
@@ -104,6 +105,7 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
                   });
                 }
                 return _ModelPicker(
+                  agentId: _selectedAgent!.id,
                   models: models,
                   selected: _selectedModel,
                   onSelected: (model) => setState(() => _selectedModel = model),
@@ -239,11 +241,13 @@ class _AgentOption extends StatelessWidget {
 
 class _ModelPicker extends StatelessWidget {
   const _ModelPicker({
+    required this.agentId,
     required this.models,
     required this.selected,
     required this.onSelected,
   });
 
+  final String agentId;
   final List<GatewayModelView> models;
   final GatewayModelView? selected;
   final ValueChanged<GatewayModelView> onSelected;
@@ -256,18 +260,84 @@ class _ModelPicker extends StatelessWidget {
         style: Theme.of(context).textTheme.bodyMedium,
       );
     }
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final model in models)
-          ChoiceChip(
-            label: Text(model.displayName),
-            selected: selected?.id == model.id,
-            onSelected: (_) => onSelected(model),
+    final theme = Theme.of(context);
+    final selectedLabel = selected == null
+        ? 'Select a model'
+        : selected!.displayName.trim().isEmpty
+            ? selected!.id
+            : selected!.displayName;
+    return Material(
+      color: theme.colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _open(context),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              const Icon(Icons.manage_search_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selectedLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${models.length} models available / tap to search',
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.unfold_more),
+            ],
           ),
-      ],
+        ),
+      ),
     );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final choices = [
+      for (final model in models)
+        (
+          providerId: agentId,
+          modelId: model.id,
+          label:
+              model.displayName.trim().isEmpty ? model.id : model.displayName,
+        ),
+    ];
+    final picked = await showModelPicker(
+      context,
+      models: choices,
+      selected: selected == null
+          ? null
+          : (
+              providerId: agentId,
+              modelId: selected!.id,
+              label: selected!.displayName.trim().isEmpty
+                  ? selected!.id
+                  : selected!.displayName,
+            ),
+    );
+    if (picked == null) return;
+    final match = models.firstWhere(
+      (model) => model.id == picked.modelId,
+      orElse: () => GatewayModelView(
+        id: picked.modelId,
+        displayName: picked.label,
+      ),
+    );
+    onSelected(match);
   }
 }
 

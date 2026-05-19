@@ -187,24 +187,7 @@ class CodexAdapter {
   }
 
   run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
-    const args = session.agentSessionId
-      ? ['exec', 'resume', '--json']
-      : [
-          'exec',
-          '--json',
-          '--color',
-          'never',
-          '--cd',
-          session.directory,
-          '--sandbox',
-          process.env.CODEX_SANDBOX || 'workspace-write',
-          '--ask-for-approval',
-          process.env.CODEX_APPROVAL_POLICY || 'never',
-          '--skip-git-repo-check',
-        ];
-    if (session.modelId) args.push('--model', session.modelId);
-    if (session.agentSessionId) args.push(session.agentSessionId);
-    args.push('-');
+    const args = buildCodexArgs(session);
     return runJsonCli({
       command: this.command,
       args,
@@ -217,6 +200,26 @@ class CodexAdapter {
       onExit,
     });
   }
+}
+
+function buildCodexArgs(session) {
+  const args = session.agentSessionId
+    ? ['exec', 'resume', '--json', '--skip-git-repo-check']
+    : [
+        'exec',
+        '--json',
+        '--color',
+        'never',
+        '--cd',
+        session.directory,
+        '--sandbox',
+        process.env.CODEX_SANDBOX || 'workspace-write',
+        '--skip-git-repo-check',
+      ];
+  if (session.modelId) args.push('--model', session.modelId);
+  if (session.agentSessionId) args.push(session.agentSessionId);
+  args.push('-');
+  return args;
 }
 
 class ClaudeCodeAdapter {
@@ -670,6 +673,7 @@ function runJsonCli({
   const state = {
     lastFullTextByKey: new Map(),
     sawText: false,
+    stderrLines: [],
   };
   readLines(child.stdout, (line) => {
     const raw = parseJsonLine(line);
@@ -692,6 +696,8 @@ function runJsonCli({
     }
   });
   readLines(child.stderr, (line) => {
+    state.stderrLines.push(line);
+    if (state.stderrLines.length > 80) state.stderrLines.shift();
     onEvent({
       type: 'command.updated',
       data: { stream: 'stderr', text: line },
@@ -716,7 +722,11 @@ function runJsonCli({
     });
   });
   child.on('close', (exitCode) => {
-    finish({ exitCode });
+    const stderr = state.stderrLines.join('\n').trim();
+    finish({
+      exitCode,
+      error: exitCode === 0 ? null : stderr || `agent exited with code ${exitCode}`,
+    });
   });
   return {
     pid: child.pid,
@@ -881,6 +891,7 @@ function compactCodexModel(model) {
 
 module.exports = {
   AgentRegistry,
+  buildCodexArgs,
   OpenCodeAdapter,
   normalizeOpenCodeEvent,
 };

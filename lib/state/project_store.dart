@@ -24,13 +24,16 @@ class ProjectState {
   ProjectState copyWith({
     List<Project>? projects,
     String? selectedProjectId,
+    bool clearSelectedProject = false,
     bool? loading,
     String? error,
     bool clearError = false,
   }) =>
       ProjectState(
         projects: projects ?? this.projects,
-        selectedProjectId: selectedProjectId ?? this.selectedProjectId,
+        selectedProjectId: clearSelectedProject
+            ? null
+            : (selectedProjectId ?? this.selectedProjectId),
         loading: loading ?? this.loading,
         error: clearError ? null : (error ?? this.error),
       );
