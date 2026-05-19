@@ -71,7 +71,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             (model) => (
               providerId: agent.id,
               modelId: model.id,
-              label: '${agent.displayName} ? ${model.displayName}',
+              label: '${agent.displayName} / ${model.displayName}',
             ),
           ),
         );
@@ -201,7 +201,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.bolt_outlined),
-                label: Text(_testing ? 'Testing?? : 'Test & load models'),
+                label: Text(_testing ? 'Testing...' : 'Test & load models'),
               ),
               const SizedBox(width: 12),
               if (_testOk == true)
@@ -246,7 +246,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 }
 
-/// Card-style tile that shows the chosen `provider ? model` and opens the picker.
+/// Card-style tile that shows the chosen `provider / model` and opens the picker.
 class _ModelTile extends StatelessWidget {
   const _ModelTile({
     required this.providerId,
@@ -291,8 +291,8 @@ class _ModelTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       isEmpty
-                          ? '$modelCount models available ? tap to choose'
-                          : 'Provider: $providerId ? $modelCount available',
+                          ? '$modelCount models available / tap to choose'
+                          : 'Provider: $providerId / $modelCount available',
                       style: theme.textTheme.labelSmall,
                     ),
                   ],
