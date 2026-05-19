@@ -47,7 +47,6 @@ The first gateway version has no authentication, matching
 | `GATEWAY_DIRECTORIES` | Extra roots returned by `GET /directories`, separated by OS path delimiter. |
 | `CODEX_BIN` | Override Codex executable path. |
 | `CODEX_SANDBOX` | Codex sandbox mode, default `workspace-write`. |
-| `CODEX_APPROVAL_POLICY` | Codex approval policy, default `never`. |
 | `CLAUDE_CODE_BIN` | Override Claude Code executable path. |
 | `CLAUDE_CODE_MODELS` | Comma-separated Claude model aliases to show in the picker. |
 | `CLAUDE_CODE_PERMISSION_MODE` | Optional Claude permission mode, for example `acceptEdits` or `dontAsk`. |

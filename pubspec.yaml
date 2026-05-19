@@ -1,7 +1,7 @@
 name: remote_multi_agent
 description: A mobile client for OpenCode — connect to a remote OpenCode server and tail its event stream.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.1.1+2
 
 environment:
   sdk: ^3.5.0

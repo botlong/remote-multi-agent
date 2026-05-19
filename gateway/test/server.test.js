@@ -175,6 +175,44 @@ test('aborting an active run returns the session to idle without error state', a
   assert.notEqual(updated.status, 'error');
 });
 
+test('gateway stores CLI stderr when an adapter exits with an error', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rma-gateway-error-'));
+  const dataFile = path.join(root, 'store.json');
+  const projectDir = path.join(root, 'project');
+  await fs.mkdir(projectDir);
+
+  const adapters = new FakeRegistry(new FailingAdapter());
+  const server = await createGatewayServer({ dataFile, adapters });
+  await listen(server);
+  t.after(() => {
+    server.closeAllRuns?.();
+    server.close();
+  });
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const project = await postJson(`${base}/projects`, { directory: projectDir });
+  const session = await postJson(`${base}/projects/${project.id}/sessions`, {
+    agentId: 'fake',
+  });
+
+  const events = collectSseUntil(
+    `${base}/sessions/${session.id}/events`,
+    (event) => event.type === 'session.error',
+  );
+  await postJson(`${base}/sessions/${session.id}/messages`, { text: 'fail' });
+  const received = await events;
+  assert(received.some((event) => event.type === 'message.delta'));
+
+  const updated = await getJson(`${base}/sessions/${session.id}`);
+  assert.equal(updated.status, 'error');
+  assert.equal(updated.raw.lastExitCode, 2);
+  assert.equal(updated.raw.lastError, 'cli usage error');
+
+  const messages = await getJson(`${base}/sessions/${session.id}/messages`);
+  assert.equal(messages[1].status, 'error');
+  assert.equal(messages[1].parts[0].text, 'cli usage error');
+});
+
 class SingleAdapterRegistry {
   constructor(adapter) {
     this.adapter = adapter;
@@ -251,6 +289,15 @@ class HangingAdapter extends FakeAdapter {
       abort() {
         onExit({ exitCode: -1, error: 'aborted' });
       },
+    };
+  }
+}
+
+class FailingAdapter extends FakeAdapter {
+  run({ onExit }) {
+    setImmediate(() => onExit({ exitCode: 2, error: 'cli usage error' }));
+    return {
+      abort() {},
     };
   }
 }

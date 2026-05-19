@@ -392,6 +392,23 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
     await textWrite;
     if (assistantMessage) {
       const finalStatus = exitCode === 0 || aborted ? 'completed' : 'error';
+      const errorText = error || `agent exited with code ${exitCode}`;
+      if (finalStatus === 'error' && !messageText(assistantMessage).trim()) {
+        assistantMessage = appendTextToMessage(assistantMessage, errorText);
+        await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
+        emit(
+          bus,
+          'message.delta',
+          running,
+          {
+            messageId: assistantMessage.id,
+            partId: assistantMessage.parts?.[0]?.id || partId,
+            field: 'text',
+            delta: errorText,
+          },
+          { delta: errorText },
+        );
+      }
       assistantMessage = completeMessage(assistantMessage, finalStatus);
       await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
     }
@@ -425,6 +442,12 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
     }
     emit(bus, 'session.updated', updated, { session: updated });
   }
+}
+
+function messageText(message) {
+  return (message.parts || [])
+    .map((part) => (typeof part.text === 'string' ? part.text : ''))
+    .join('');
 }
 
 function emit(bus, type, session, data = {}, raw = {}) {

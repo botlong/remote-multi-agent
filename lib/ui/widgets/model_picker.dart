@@ -192,6 +192,13 @@ class _ModelRow extends StatelessWidget {
               : theme.colorScheme.onSurface,
         ),
       ),
+      subtitle: choice.label.trim().isEmpty || choice.label == choice.modelId
+          ? null
+          : Text(
+              choice.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
       trailing: isSelected
           ? Icon(Icons.check, color: theme.colorScheme.primary, size: 18)
           : null,

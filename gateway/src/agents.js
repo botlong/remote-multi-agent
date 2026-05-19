@@ -198,8 +198,6 @@ class CodexAdapter {
           session.directory,
           '--sandbox',
           process.env.CODEX_SANDBOX || 'workspace-write',
-          '--ask-for-approval',
-          process.env.CODEX_APPROVAL_POLICY || 'never',
           '--skip-git-repo-check',
         ];
     if (session.modelId) args.push('--model', session.modelId);
@@ -670,6 +668,7 @@ function runJsonCli({
   const state = {
     lastFullTextByKey: new Map(),
     sawText: false,
+    stderrLines: [],
   };
   readLines(child.stdout, (line) => {
     const raw = parseJsonLine(line);
@@ -692,6 +691,8 @@ function runJsonCli({
     }
   });
   readLines(child.stderr, (line) => {
+    state.stderrLines.push(line);
+    if (state.stderrLines.length > 80) state.stderrLines.shift();
     onEvent({
       type: 'command.updated',
       data: { stream: 'stderr', text: line },
@@ -716,7 +717,11 @@ function runJsonCli({
     });
   });
   child.on('close', (exitCode) => {
-    finish({ exitCode });
+    const stderr = state.stderrLines.join('\n').trim();
+    finish({
+      exitCode,
+      error: exitCode === 0 ? null : stderr || `agent exited with code ${exitCode}`,
+    });
   });
   return {
     pid: child.pid,
