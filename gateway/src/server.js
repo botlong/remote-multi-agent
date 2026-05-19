@@ -289,6 +289,7 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
   }
   const adapter = registry.get(session.agentId);
   if (!adapter) throw httpError(400, `unknown agent: ${session.agentId}`);
+  console.log(`[startTurn] agent=${session.agentId} model=${session.modelId} dir=${session.directory} prompt=${text.slice(0,80)}`);
   const canRunNative = Boolean(adapter.runNative && session.agentSessionId);
 
   const running = await store.updateSession(session.id, { status: 'running' });
@@ -352,6 +353,7 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
       onEvent: ({ type, data, raw }) => emit(bus, type, running, data, raw),
       onText: (delta) => {
         if (!delta) return;
+        console.log(`[onText] delta(${delta.length}): ${delta.slice(0,100)}`);
         textWrite = textWrite.then(async () => {
           assistantMessage = appendTextToMessage(assistantMessage, delta);
           await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
@@ -392,6 +394,7 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
   });
 
   async function handleExit({ exitCode, error }) {
+    console.log(`[handleExit] exitCode=${exitCode} error=${error || 'none'}`);
     activeRuns.delete(session.id);
     await textWrite;
     if (assistantMessage) {

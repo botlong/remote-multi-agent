@@ -757,6 +757,10 @@ function extractTextDelta(raw, state) {
     if (text) return suffixDelta(`item:${raw.item.id || raw.type || 'assistant'}`, text, state);
   }
 
+  if (raw.item && typeof raw.item.text === 'string' && raw.item.text) {
+    return suffixDelta(`item:${raw.item.id || raw.type || 'agent_message'}`, raw.item.text, state);
+  }
+
   if (raw.message && raw.message.role === 'assistant') {
     const text =
       typeof raw.message.content === 'string'
