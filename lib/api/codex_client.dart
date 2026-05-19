@@ -182,17 +182,19 @@ class CodexClient {
       req = await http.postUrl(url);
       req.headers.set('Accept', 'text/event-stream');
       req.headers.set('Content-Type', 'application/json; charset=utf-8');
-      if (_bearer != null && _bearer!.isNotEmpty) {
+      if (_bearer != null && _bearer.isNotEmpty) {
         req.headers.set('Authorization', 'Bearer $_bearer');
       }
       req.add(utf8.encode(jsonEncode(body)));
       res = await req.close();
       if (res.statusCode != 200) {
         await res.drain<void>();
-        controller.add(CodexEvent(
-          type: 'error',
-          data: {'message': 'HTTP ${res.statusCode}'},
-        ));
+        controller.add(
+          CodexEvent(
+            type: 'error',
+            data: {'message': 'HTTP ${res.statusCode}'},
+          ),
+        );
         await controller.close();
         return;
       }
@@ -208,9 +210,8 @@ class CodexClient {
           remainder = lines.removeLast();
 
           for (final raw in lines) {
-            final line = raw.endsWith('\r')
-                ? raw.substring(0, raw.length - 1)
-                : raw;
+            final line =
+                raw.endsWith('\r') ? raw.substring(0, raw.length - 1) : raw;
 
             if (line.isEmpty) {
               if (dataBuf.isNotEmpty) {
@@ -242,10 +243,12 @@ class CodexClient {
         },
         onError: (Object e) {
           if (!controller.isClosed) {
-            controller.add(CodexEvent(
-              type: 'error',
-              data: {'message': e.toString()},
-            ));
+            controller.add(
+              CodexEvent(
+                type: 'error',
+                data: {'message': e.toString()},
+              ),
+            );
           }
           controller.close();
         },
@@ -268,10 +271,12 @@ class CodexClient {
       };
     } catch (e) {
       if (!controller.isClosed) {
-        controller.add(CodexEvent(
-          type: 'error',
-          data: {'message': e.toString()},
-        ));
+        controller.add(
+          CodexEvent(
+            type: 'error',
+            data: {'message': e.toString()},
+          ),
+        );
         await controller.close();
       }
       try {

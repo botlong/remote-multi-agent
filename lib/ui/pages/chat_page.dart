@@ -196,8 +196,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       vertical: 8,
                     ),
                     itemCount: messages.length,
-                    itemBuilder: (_, i) =>
-                        MessageBubble(message: messages[i]),
+                    itemBuilder: (_, i) => MessageBubble(message: messages[i]),
                   ),
           ),
           // Attachment preview strip
@@ -212,8 +211,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             onSend: _send,
             onAbort: _abort,
             onAttach: _pickAttachment,
-            isStreaming:
-                messages.any((m) => m.status == MessageStatus.running),
+            isStreaming: messages.any((m) => m.status == MessageStatus.running),
             hasAttachments: _attachments.isNotEmpty,
           ),
         ],

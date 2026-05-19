@@ -58,8 +58,7 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
     final q = _query.text.trim().toLowerCase();
     if (q.isEmpty) return widget.models;
     return widget.models.where((m) {
-      final hay =
-          '${m.providerId} ${m.modelId} ${m.label}'.toLowerCase();
+      final hay = '${m.providerId} ${m.modelId} ${m.label}'.toLowerCase();
       return hay.contains(q);
     }).toList(growable: false);
   }
@@ -193,6 +192,13 @@ class _ModelRow extends StatelessWidget {
               : theme.colorScheme.onSurface,
         ),
       ),
+      subtitle: choice.label.trim().isEmpty || choice.label == choice.modelId
+          ? null
+          : Text(
+              choice.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
       trailing: isSelected
           ? Icon(Icons.check, color: theme.colorScheme.primary, size: 18)
           : null,

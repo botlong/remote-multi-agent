@@ -20,9 +20,9 @@ class _HomePageState extends State<HomePage> {
 
   static const _destinations = <NavigationDestination>[
     NavigationDestination(
-      icon: Icon(Icons.chat_bubble_outline),
-      selectedIcon: Icon(Icons.chat_bubble),
-      label: 'Chat',
+      icon: Icon(Icons.folder_outlined),
+      selectedIcon: Icon(Icons.folder),
+      label: 'Projects',
     ),
     NavigationDestination(
       icon: Icon(Icons.difference_outlined),

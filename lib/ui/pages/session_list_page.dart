@@ -61,12 +61,11 @@ class SessionListPage extends ConsumerWidget {
     SessionListController controller,
   ) async {
     final settings = ref.read(settingsControllerProvider);
-    final qqbotUrl =
-        'http://${Uri.parse(settings.baseUrl).host}:8787';
+    final qqbotUrl = 'http://${Uri.parse(settings.baseUrl).host}:8787';
 
     final selectedDir = await showDirectoryPicker(
       context,
-      qqbotBaseUrl: qqbotUrl,
+      gatewayBaseUrl: qqbotUrl,
       bearerToken: 'qqbot-dev-token-please-rotate-me',
       initialPath: 'D:\\',
     );
@@ -156,11 +155,14 @@ class _SessionTile extends ConsumerWidget {
               },
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error),
-              title: Text('Delete',
-                  style: TextStyle(
-                      color: Theme.of(context).colorScheme.error)),
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                'Delete',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 _confirmDelete(context, ref);
@@ -203,7 +205,8 @@ class _SessionTile extends ConsumerWidget {
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Rename failed: $e')));
+                    SnackBar(content: Text('Rename failed: $e')),
+                  );
                 }
               }
             },
@@ -220,7 +223,8 @@ class _SessionTile extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete session?'),
         content: Text(
-            'This will permanently delete "${session.title.isEmpty ? "(untitled)" : session.title}".'),
+          'This will permanently delete "${session.title.isEmpty ? "(untitled)" : session.title}".',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -239,7 +243,8 @@ class _SessionTile extends ConsumerWidget {
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Delete failed: $e')));
+                    SnackBar(content: Text('Delete failed: $e')),
+                  );
                 }
               }
             },
@@ -276,8 +281,10 @@ class _ErrorView extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
-          Text(error,
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          Text(
+            error,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
           const SizedBox(height: 16),
           const Text('Pull to retry, or check Settings ›'),
         ],

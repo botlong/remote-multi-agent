@@ -23,7 +23,8 @@ class AppSettings {
   final String providerId;
   final String modelId;
 
-  bool get isConfigured => baseUrl.isNotEmpty && providerId.isNotEmpty && modelId.isNotEmpty;
+  bool get isConfigured =>
+      baseUrl.isNotEmpty && providerId.isNotEmpty && modelId.isNotEmpty;
 
   AppSettings copyWith({
     String? baseUrl,

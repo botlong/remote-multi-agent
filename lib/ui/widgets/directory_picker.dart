@@ -1,5 +1,5 @@
-/// Bottom-sheet directory picker that browses the remote computer's file system
-/// via the QQBot server's `/files/dirs` endpoint.
+/// Bottom-sheet directory picker that browses the gateway host's file system
+/// via the gateway `/files/dirs` endpoint.
 ///
 /// Features:
 ///   - Browse directories on the remote machine
@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 /// or null if dismissed.
 Future<String?> showDirectoryPicker(
   BuildContext context, {
-  required String qqbotBaseUrl,
+  required String gatewayBaseUrl,
   required String bearerToken,
   String? initialPath,
 }) {
@@ -24,7 +24,7 @@ Future<String?> showDirectoryPicker(
     showDragHandle: true,
     useSafeArea: true,
     builder: (_) => _DirectoryPickerSheet(
-      qqbotBaseUrl: qqbotBaseUrl,
+      gatewayBaseUrl: gatewayBaseUrl,
       bearerToken: bearerToken,
       initialPath: initialPath ?? 'D:\\',
     ),
@@ -33,12 +33,12 @@ Future<String?> showDirectoryPicker(
 
 class _DirectoryPickerSheet extends StatefulWidget {
   const _DirectoryPickerSheet({
-    required this.qqbotBaseUrl,
+    required this.gatewayBaseUrl,
     required this.bearerToken,
     required this.initialPath,
   });
 
-  final String qqbotBaseUrl;
+  final String gatewayBaseUrl;
   final String bearerToken;
   final String initialPath;
 
@@ -60,15 +60,17 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
   void initState() {
     super.initState();
     _currentPath = widget.initialPath;
-    _dio = Dio(BaseOptions(
-      baseUrl: widget.qqbotBaseUrl.replaceAll(RegExp(r'/$'), ''),
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-      headers: {
-        if (widget.bearerToken.isNotEmpty)
-          'Authorization': 'Bearer ${widget.bearerToken}',
-      },
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: widget.gatewayBaseUrl.replaceAll(RegExp(r'/$'), ''),
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        headers: {
+          if (widget.bearerToken.isNotEmpty)
+            'Authorization': 'Bearer ${widget.bearerToken}',
+        },
+      ),
+    );
     _loadDirs();
   }
 
@@ -91,10 +93,12 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
       );
       final data = res.data ?? {};
       final dirs = (data['dirs'] as List<dynamic>?)
-              ?.map((d) => _DirEntry(
-                    name: (d as Map)['name'] as String? ?? '',
-                    path: d['path'] as String? ?? '',
-                  ))
+              ?.map(
+                (d) => _DirEntry(
+                  name: (d as Map)['name'] as String? ?? '',
+                  path: d['path'] as String? ?? '',
+                ),
+              )
               .toList() ??
           [];
       if (!mounted) return;
@@ -218,7 +222,10 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
                       decoration: InputDecoration(
                         hintText: 'New folder name',
                         isDense: true,
-                        prefixIcon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                        prefixIcon: const Icon(
+                          Icons.create_new_folder_outlined,
+                          size: 20,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -273,10 +280,12 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
 
   Widget _buildList(ThemeData theme) {
     if (_loading) {
-      return const Center(child: Padding(
-        padding: EdgeInsets.all(24),
-        child: CircularProgressIndicator(),
-      ));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
     }
     if (_error != null) {
       return Center(

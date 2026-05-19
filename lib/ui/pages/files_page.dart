@@ -1,3 +1,5 @@
+// ignore_for_file: unintended_html_in_doc_comment
+
 /// File tree browser for the current session's working directory.
 ///
 /// Shows a recursive file/folder tree fetched from the QQBot server endpoint:
@@ -256,8 +258,11 @@ class _FilesPageState extends ConsumerState<FilesPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.folder_off_outlined,
-                  size: 48, color: theme.colorScheme.outline),
+              Icon(
+                Icons.folder_off_outlined,
+                size: 48,
+                color: theme.colorScheme.outline,
+              ),
               const SizedBox(height: 12),
               Text(
                 'Could not load files',
@@ -343,8 +348,11 @@ class _DirectoryHeader extends StatelessWidget {
           const SizedBox(height: 4),
           Row(
             children: [
-              Icon(Icons.folder_outlined,
-                  size: 14, color: theme.colorScheme.outline),
+              Icon(
+                Icons.folder_outlined,
+                size: 14,
+                color: theme.colorScheme.outline,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -560,8 +568,11 @@ class _FileViewerPageState extends ConsumerState<FileViewerPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline,
-                  size: 48, color: theme.colorScheme.error),
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: theme.colorScheme.error,
+              ),
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
@@ -699,7 +710,7 @@ class _CodeLine extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: 'monospace',
                 fontSize: 12,
-                color: theme.colorScheme.outline.withOpacity(0.5),
+                color: theme.colorScheme.outline.withValues(alpha: 0.5),
               ),
             ),
           ),
@@ -742,7 +753,10 @@ class _HighlightedText extends StatelessWidget {
   }
 
   static List<TextSpan> _highlight(
-      String text, String language, ThemeData theme) {
+    String text,
+    String language,
+    ThemeData theme,
+  ) {
     if (text.isEmpty) return [const TextSpan(text: ' ')];
 
     final colorScheme = theme.colorScheme;
@@ -767,7 +781,7 @@ class _HighlightedText extends StatelessWidget {
 
     final spans = <TextSpan>[];
     final pattern = RegExp(
-      '(${_stringPattern})|'
+      '($_stringPattern)|'
       '(\\b(?:${keywords.join('|')})\\b)|'
       '(\\b\\d+\\.?\\d*\\b)',
     );
@@ -776,10 +790,12 @@ class _HighlightedText extends StatelessWidget {
     for (final match in pattern.allMatches(text)) {
       // Text before match
       if (match.start > lastEnd) {
-        spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
-          style: TextStyle(color: defaultColor),
-        ));
+        spans.add(
+          TextSpan(
+            text: text.substring(lastEnd, match.start),
+            style: TextStyle(color: defaultColor),
+          ),
+        );
       }
       final matched = match.group(0)!;
       Color color;
@@ -790,21 +806,25 @@ class _HighlightedText extends StatelessWidget {
       } else {
         color = numberColor;
       }
-      spans.add(TextSpan(
-        text: matched,
-        style: TextStyle(
-          color: color,
-          fontWeight:
-              match.group(2) != null ? FontWeight.w600 : FontWeight.normal,
+      spans.add(
+        TextSpan(
+          text: matched,
+          style: TextStyle(
+            color: color,
+            fontWeight:
+                match.group(2) != null ? FontWeight.w600 : FontWeight.normal,
+          ),
         ),
-      ));
+      );
       lastEnd = match.end;
     }
     if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-        style: TextStyle(color: defaultColor),
-      ));
+      spans.add(
+        TextSpan(
+          text: text.substring(lastEnd),
+          style: TextStyle(color: defaultColor),
+        ),
+      );
     }
     return spans.isEmpty
         ? [TextSpan(text: text, style: TextStyle(color: defaultColor))]
@@ -816,48 +836,210 @@ class _HighlightedText extends StatelessWidget {
   static List<String> _keywordsFor(String language) {
     return switch (language) {
       'dart' => [
-          'import', 'export', 'library', 'part', 'class', 'abstract',
-          'extends', 'implements', 'mixin', 'enum', 'typedef',
-          'final', 'const', 'var', 'late', 'static', 'dynamic',
-          'void', 'int', 'double', 'String', 'bool', 'List', 'Map', 'Set',
-          'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default',
-          'break', 'continue', 'return', 'throw', 'try', 'catch', 'finally',
-          'async', 'await', 'yield', 'sync',
-          'true', 'false', 'null', 'this', 'super', 'new',
-          'required', 'override', 'factory', 'get', 'set', 'with',
+          'import',
+          'export',
+          'library',
+          'part',
+          'class',
+          'abstract',
+          'extends',
+          'implements',
+          'mixin',
+          'enum',
+          'typedef',
+          'final',
+          'const',
+          'var',
+          'late',
+          'static',
+          'dynamic',
+          'void',
+          'int',
+          'double',
+          'String',
+          'bool',
+          'List',
+          'Map',
+          'Set',
+          'if',
+          'else',
+          'for',
+          'while',
+          'do',
+          'switch',
+          'case',
+          'default',
+          'break',
+          'continue',
+          'return',
+          'throw',
+          'try',
+          'catch',
+          'finally',
+          'async',
+          'await',
+          'yield',
+          'sync',
+          'true',
+          'false',
+          'null',
+          'this',
+          'super',
+          'new',
+          'required',
+          'override',
+          'factory',
+          'get',
+          'set',
+          'with',
         ],
       'typescript' || 'javascript' => [
-          'import', 'export', 'from', 'default', 'as',
-          'const', 'let', 'var', 'function', 'class', 'extends',
-          'interface', 'type', 'enum', 'namespace',
-          'if', 'else', 'for', 'while', 'do', 'switch', 'case',
-          'break', 'continue', 'return', 'throw', 'try', 'catch', 'finally',
-          'async', 'await', 'yield',
-          'true', 'false', 'null', 'undefined', 'this', 'new',
-          'void', 'string', 'number', 'boolean', 'any', 'never',
+          'import',
+          'export',
+          'from',
+          'default',
+          'as',
+          'const',
+          'let',
+          'var',
+          'function',
+          'class',
+          'extends',
+          'interface',
+          'type',
+          'enum',
+          'namespace',
+          'if',
+          'else',
+          'for',
+          'while',
+          'do',
+          'switch',
+          'case',
+          'break',
+          'continue',
+          'return',
+          'throw',
+          'try',
+          'catch',
+          'finally',
+          'async',
+          'await',
+          'yield',
+          'true',
+          'false',
+          'null',
+          'undefined',
+          'this',
+          'new',
+          'void',
+          'string',
+          'number',
+          'boolean',
+          'any',
+          'never',
         ],
       'json' => [],
       'yaml' => ['true', 'false', 'null'],
       'python' => [
-          'import', 'from', 'as', 'class', 'def', 'lambda',
-          'if', 'elif', 'else', 'for', 'while', 'break', 'continue',
-          'return', 'yield', 'raise', 'try', 'except', 'finally', 'with',
-          'True', 'False', 'None', 'self', 'and', 'or', 'not', 'in', 'is',
-          'async', 'await', 'pass', 'global', 'nonlocal',
+          'import',
+          'from',
+          'as',
+          'class',
+          'def',
+          'lambda',
+          'if',
+          'elif',
+          'else',
+          'for',
+          'while',
+          'break',
+          'continue',
+          'return',
+          'yield',
+          'raise',
+          'try',
+          'except',
+          'finally',
+          'with',
+          'True',
+          'False',
+          'None',
+          'self',
+          'and',
+          'or',
+          'not',
+          'in',
+          'is',
+          'async',
+          'await',
+          'pass',
+          'global',
+          'nonlocal',
         ],
       'go' => [
-          'package', 'import', 'func', 'type', 'struct', 'interface',
-          'var', 'const', 'map', 'chan', 'range',
-          'if', 'else', 'for', 'switch', 'case', 'default', 'select',
-          'break', 'continue', 'return', 'go', 'defer', 'fallthrough',
-          'true', 'false', 'nil', 'iota',
+          'package',
+          'import',
+          'func',
+          'type',
+          'struct',
+          'interface',
+          'var',
+          'const',
+          'map',
+          'chan',
+          'range',
+          'if',
+          'else',
+          'for',
+          'switch',
+          'case',
+          'default',
+          'select',
+          'break',
+          'continue',
+          'return',
+          'go',
+          'defer',
+          'fallthrough',
+          'true',
+          'false',
+          'nil',
+          'iota',
         ],
       'rust' => [
-          'use', 'mod', 'pub', 'fn', 'struct', 'enum', 'trait', 'impl',
-          'let', 'mut', 'const', 'static', 'type', 'where',
-          'if', 'else', 'for', 'while', 'loop', 'match',
-          'break', 'continue', 'return', 'async', 'await', 'move',
-          'true', 'false', 'self', 'Self', 'super', 'crate',
+          'use',
+          'mod',
+          'pub',
+          'fn',
+          'struct',
+          'enum',
+          'trait',
+          'impl',
+          'let',
+          'mut',
+          'const',
+          'static',
+          'type',
+          'where',
+          'if',
+          'else',
+          'for',
+          'while',
+          'loop',
+          'match',
+          'break',
+          'continue',
+          'return',
+          'async',
+          'await',
+          'move',
+          'true',
+          'false',
+          'self',
+          'Self',
+          'super',
+          'crate',
         ],
       _ => [],
     };

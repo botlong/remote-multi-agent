@@ -23,6 +23,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: 3.27.1
           cache: true
 
       - run: flutter pub get
@@ -31,7 +32,7 @@ jobs:
       # Wipe any stale derived data / pods that may be cached. Without this,
       # back-to-back runs occasionally fail with "Building a deployable iOS
       # app requires a selected Development Team" even though we pass
-      # --no-codesign — a known macos-runner cache-pollution issue.
+      # --no-codesign ??a known macos-runner cache-pollution issue.
       - name: Clean build state
         run: |
           flutter clean
@@ -49,7 +50,9 @@ jobs:
         run: |
           set -euo pipefail
           cd ios
-          pod install --repo-update
+          if [ -f Podfile ]; then
+            pod install --repo-update
+          fi
           xcodebuild \
             -workspace Runner.xcworkspace \
             -scheme Runner \

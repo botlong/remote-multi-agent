@@ -57,8 +57,7 @@ class ImagePartView extends ConsumerWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: CircularProgressIndicator(
             value: progress.expectedTotalBytes != null
-                ? progress.cumulativeBytesLoaded /
-                    progress.expectedTotalBytes!
+                ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
                 : null,
             strokeWidth: 2,
           ),
@@ -120,7 +119,7 @@ class ImagePartView extends ConsumerWidget {
 
   void _openFullScreen(BuildContext context, WidgetRef ref) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder: (_) => _FullScreenImagePage(
           part: part,
           imageUrl: part.isDataUrl ? null : _resolveUrl(ref),

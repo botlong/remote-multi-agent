@@ -48,7 +48,9 @@ class Session {
       providerId: model['providerID'] as String?,
       cost: (json['cost'] as num?)?.toDouble() ?? 0.0,
       tokens: json['tokens'] is Map
-          ? SessionTokens.fromJson((json['tokens'] as Map).cast<String, dynamic>())
+          ? SessionTokens.fromJson(
+              (json['tokens'] as Map).cast<String, dynamic>(),
+            )
           : null,
     );
   }

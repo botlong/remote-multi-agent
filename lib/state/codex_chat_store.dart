@@ -106,10 +106,12 @@ class CodexChatController extends StateNotifier<CodexChatState> {
     String directory = '',
   })  : _client = client,
         _localKey = localKey,
-        super(CodexChatState.initial(
-          threadId: threadId ?? '',
-          directory: directory,
-        ));
+        super(
+          CodexChatState.initial(
+            threadId: threadId ?? '',
+            directory: directory,
+          ),
+        );
 
   final CodexClient _client;
   // ignore: unused_field
@@ -131,7 +133,8 @@ class CodexChatController extends StateNotifier<CodexChatState> {
     if (state.isStreaming) return; // serialize turns
 
     // 1) Append the user message immediately so the UI shows it.
-    final userId = 'u_${++_userMsgCounter}_${DateTime.now().microsecondsSinceEpoch}';
+    final userId =
+        'u_${++_userMsgCounter}_${DateTime.now().microsecondsSinceEpoch}';
     final userMessage = Message(
       id: userId,
       role: MessageRole.user,
@@ -147,7 +150,8 @@ class CodexChatController extends StateNotifier<CodexChatState> {
       },
       createdAtMs: DateTime.now().millisecondsSinceEpoch,
     );
-    final next = Map<String, Message>.from(state.messages)..[userId] = userMessage;
+    final next = Map<String, Message>.from(state.messages)
+      ..[userId] = userMessage;
     state = state.copyWith(
       messages: next,
       directory: directory,
@@ -156,7 +160,8 @@ class CodexChatController extends StateNotifier<CodexChatState> {
     );
 
     // 2) Pre-create the assistant message so streaming parts can attach.
-    final asstId = 'a_${++_userMsgCounter}_${DateTime.now().microsecondsSinceEpoch}';
+    final asstId =
+        'a_${++_userMsgCounter}_${DateTime.now().microsecondsSinceEpoch}';
     _activeAssistantMessageId = asstId;
     final asst = Message(
       id: asstId,
@@ -262,8 +267,7 @@ class CodexChatController extends StateNotifier<CodexChatState> {
     if (raw is! Map) return;
     final item = raw.cast<String, dynamic>();
     final itemType = item['type'] as String? ?? '';
-    final itemId = (item['id'] as String?)?.toString() ??
-        'item_${++_itemSeq}';
+    final itemId = (item['id'] as String?)?.toString() ?? 'item_${++_itemSeq}';
 
     switch (itemType) {
       case 'command_execution':

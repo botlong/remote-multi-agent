@@ -20,3 +20,7 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test --reporter expanded
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test --prefix gateway

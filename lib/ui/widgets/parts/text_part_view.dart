@@ -50,7 +50,7 @@ class TextPartView extends StatelessWidget {
         blockquoteDecoration: BoxDecoration(
           border: Border(
             left: BorderSide(
-              color: theme.colorScheme.primary.withOpacity(0.5),
+              color: theme.colorScheme.primary.withValues(alpha: 0.5),
               width: 3,
             ),
           ),
@@ -97,8 +97,10 @@ class TextPartView extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.broken_image,
-                    color: Theme.of(context).colorScheme.onErrorContainer),
+                Icon(
+                  Icons.broken_image,
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
@@ -176,7 +178,7 @@ class _CodeBlockWidget extends StatelessWidget {
         color: isDark ? const Color(0xFF282C34) : const Color(0xFFF8F8F8),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
       ),
       child: Column(
@@ -186,7 +188,9 @@ class _CodeBlockWidget extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.5,
+              ),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(8)),
             ),
