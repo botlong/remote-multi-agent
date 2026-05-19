@@ -331,7 +331,15 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
   console.log(`[startTurn] agent=${session.agentId} model=${session.modelId} dir=${session.directory} prompt=${text.slice(0,80)}`);
   const canRunNative = Boolean(adapter.runNative && session.agentSessionId);
 
-  const running = await store.updateSession(session.id, { status: 'running' });
+  // Auto-title from first user message when title is a default placeholder.
+  const isDefaultTitle = /^(Codex|Claude Code|OpenCode)\s+session$/i.test(session.title);
+  const autoTitle = isDefaultTitle && text.trim()
+    ? text.trim().replace(/\s+/g, ' ').slice(0, 50) + (text.trim().length > 50 ? '…' : '')
+    : null;
+  const runPatch = { status: 'running' };
+  if (autoTitle) runPatch.title = autoTitle;
+
+  const running = await store.updateSession(session.id, runPatch);
   emit(bus, 'session.started', running, { session: running });
   emit(bus, 'session.updated', running, { session: running });
 
