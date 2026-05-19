@@ -195,8 +195,10 @@ GatewaySessionView readSession(dynamic value) {
 
   final map = _asMap(value);
   if (map.isEmpty) {
-    final nested = _property(value, 'session');
-    if (nested != null) return readSession(nested);
+    try {
+      final nested = _property(value, 'session');
+      if (nested != null) return readSession(nested);
+    } catch (_) {/* ignore */}
   }
   final model = _asMap(map['model']);
   final objectStatus = _property(value, 'status');
