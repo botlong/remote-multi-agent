@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../api/opencode_client.dart';
+import '../../api/gateway_client.dart';
 import '../../state/settings_store.dart';
 import '../widgets/model_picker.dart';
 import 'home_page.dart';
@@ -48,11 +48,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       _testOk = null;
     });
     try {
-      final client = OpencodeClient(
+      final client = GatewayClient(
         baseUrl: Uri.parse(_baseUrlCtrl.text.trim()),
         bearerToken: _tokenCtrl.text.trim(),
       );
-      final ok = await client.ping();
+      final ok = await client.health();
       if (!ok) {
         setState(() {
           _testOk = false;
@@ -61,7 +61,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         client.close();
         return;
       }
-      final models = await client.listProviderModels();
+      final agents = await client.listAgents();
+      final models = <ModelChoice>[];
+      for (final agent in agents) {
+        if (!agent.supportsModels) continue;
+        final agentModels = await client.listAgentModels(agent.id);
+        models.addAll(
+          agentModels.map(
+            (model) => (
+              providerId: agent.id,
+              modelId: model.id,
+              label: '${agent.displayName} ? ${model.displayName}',
+            ),
+          ),
+        );
+      }
       client.close();
       if (!mounted) return;
       setState(() {
@@ -151,7 +165,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'Connect to your OpenCode server',
+            'Connect to your agent gateway',
             style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: 16),
@@ -169,7 +183,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           TextField(
             controller: _tokenCtrl,
             decoration: const InputDecoration(
-              labelText: 'Bearer token (OPENCODE_SERVER_PASSWORD)',
+              labelText: 'Bearer token (optional)',
               prefixIcon: Icon(Icons.lock_outline),
             ),
             autocorrect: false,
@@ -187,7 +201,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.bolt_outlined),
-                label: Text(_testing ? 'Testing…' : 'Test & load models'),
+                label: Text(_testing ? 'Testing?? : 'Test & load models'),
               ),
               const SizedBox(width: 12),
               if (_testOk == true)
@@ -232,7 +246,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 }
 
-/// Card-style tile that shows the chosen `provider · model` and opens the picker.
+/// Card-style tile that shows the chosen `provider ? model` and opens the picker.
 class _ModelTile extends StatelessWidget {
   const _ModelTile({
     required this.providerId,
@@ -277,8 +291,8 @@ class _ModelTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       isEmpty
-                          ? '$modelCount models available · tap to choose'
-                          : 'Provider: $providerId · $modelCount available',
+                          ? '$modelCount models available ? tap to choose'
+                          : 'Provider: $providerId ? $modelCount available',
                       style: theme.textTheme.labelSmall,
                     ),
                   ],
