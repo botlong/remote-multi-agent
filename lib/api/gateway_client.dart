@@ -181,6 +181,13 @@ class GatewayClient {
     await _dio.delete<dynamic>('/sessions/${_path(sessionId)}');
   }
 
+  Future<Map<String, dynamic>> getSessionDiff(String sessionId) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/sessions/${_path(sessionId)}/diff',
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
   Future<void> deleteMessage(String sessionId, String messageId) async {
     await _dio.delete<dynamic>(
       '/sessions/${_path(sessionId)}/messages/${_path(messageId)}',

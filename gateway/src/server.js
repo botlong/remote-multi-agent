@@ -2,6 +2,9 @@
 
 const http = require('node:http');
 const { URL } = require('node:url');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 
 const { AgentRegistry } = require('./agents');
 const { EventBus, makeEvent } = require('./events');
@@ -326,6 +329,24 @@ async function handleSessions({
     const unsubscribe = bus.subscribe(session.id, response);
     request.on('close', unsubscribe);
     return;
+  }
+
+  // GET /sessions/:sessionId/diff  — git diff for this session's directory
+  if (segments.length === 3 && segments[2] === 'diff' && request.method === 'GET') {
+    const dir = session.directory;
+    if (!dir) throw httpError(400, 'session has no directory');
+    try {
+      const { stdout: diffText } = await execFileAsync(
+        'git', ['diff', '--no-color'], { cwd: dir, maxBuffer: 2 * 1024 * 1024 },
+      );
+      const { stdout: stagedText } = await execFileAsync(
+        'git', ['diff', '--cached', '--no-color'], { cwd: dir, maxBuffer: 2 * 1024 * 1024 },
+      ).catch(() => ({ stdout: '' }));
+      const combined = (diffText + stagedText).trim();
+      return sendJson(response, { diff: combined, directory: dir });
+    } catch (err) {
+      return sendJson(response, { diff: '', error: err.message, directory: dir });
+    }
   }
 
   throw httpError(404, 'not found');

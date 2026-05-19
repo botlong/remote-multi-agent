@@ -5,6 +5,7 @@ import '../../state/gateway_providers.dart';
 import '../widgets/agent_badge.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/session_status_chip.dart';
+import 'diff_page.dart';
 import 'gateway_ui_adapters.dart';
 
 class GatewayChatPage extends ConsumerStatefulWidget {
@@ -64,6 +65,18 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.session.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.difference_outlined),
+            tooltip: 'View diff',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => DiffPage(sessionId: widget.session.id),
+              ),
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(54),
           child: Padding(
