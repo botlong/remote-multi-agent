@@ -176,6 +176,17 @@ class JsonStore {
     return list[index];
   }
 
+  async deleteMessage(sessionId, messageId) {
+    const list = this.data.messagesBySession[sessionId];
+    if (!list) return false;
+    const index = list.findIndex((m) => m.id === messageId);
+    if (index === -1) return false;
+    list.splice(index, 1);
+    await this.touchSession(sessionId);
+    await this.save();
+    return true;
+  }
+
   async touchSession(sessionId, save = false) {
     const session = this.getSession(sessionId);
     if (session) session.updatedAt = Date.now();

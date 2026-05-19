@@ -145,6 +145,12 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     state = state.copyWith(isStreaming: false);
   }
 
+  Future<void> deleteMessage(String messageId) async {
+    await _client.deleteMessage(state.sessionId, messageId);
+    final next = Map<String, Message>.from(state.messages)..remove(messageId);
+    state = state.copyWith(messages: next);
+  }
+
   void _onEvent(GatewayEvent event) {
     if (state.connection != GatewayChatConnectionState.connected) {
       state = state.copyWith(connection: GatewayChatConnectionState.connected);
@@ -157,6 +163,13 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         _onPart(event.data);
       case 'message.delta':
         _onMessageDelta(event);
+      case 'message.deleted':
+        final messageId = event.data['messageId'] as String?;
+        if (messageId != null) {
+          final next = Map<String, Message>.from(state.messages)
+            ..remove(messageId);
+          state = state.copyWith(messages: next);
+        }
       case 'message.part.delta':
         _onPartDelta(event.data);
       case 'session.updated':

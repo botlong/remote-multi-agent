@@ -291,6 +291,15 @@ async function handleSessions({
     }
   }
 
+  // DELETE /sessions/:sessionId/messages/:messageId
+  if (segments.length === 4 && segments[2] === 'messages' && request.method === 'DELETE') {
+    const messageId = segments[3];
+    const deleted = await store.deleteMessage(session.id, messageId);
+    if (!deleted) throw httpError(404, 'message not found');
+    emit(bus, 'message.deleted', session, { messageId }, { messageId });
+    return sendJson(response, { ok: true });
+  }
+
   if (segments.length === 3 && segments[2] === 'abort' && request.method === 'POST') {
     const run = activeRuns.get(session.id);
     if (run) run.abort();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/message.dart';
 import '../../models/part.dart';
@@ -9,8 +10,13 @@ import 'parts/text_part_view.dart';
 import 'parts/tool_part_view.dart';
 
 class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    this.onDelete,
+  });
   final Message message;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +32,9 @@ class MessageBubble extends StatelessWidget {
       partWidgets.add(const _TypingIndicator());
     }
 
-    return Padding(
+    return GestureDetector(
+      onLongPress: () => _showContextMenu(context),
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,6 +83,69 @@ class MessageBubble extends StatelessWidget {
             const _RoleAvatar(role: MessageRole.user),
           ],
         ],
+      ),
+    ),
+    );
+  }
+
+  String _plainText() {
+    final buf = StringBuffer();
+    for (final part in message.orderedParts) {
+      switch (part) {
+        case TextPart():
+          buf.writeln(part.text);
+        case ReasoningPart():
+          buf.writeln(part.text);
+        case ToolPart():
+          buf.writeln('[${part.tool}] ${part.input ?? ""}');
+          if (part.output != null) buf.writeln(part.output);
+        default:
+          break;
+      }
+    }
+    return buf.toString().trim();
+  }
+
+  void _showContextMenu(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy text'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: _plainText()));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Copied'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
+            if (onDelete != null)
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  'Delete message',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onDelete!();
+                },
+              ),
+          ],
+        ),
       ),
     );
   }

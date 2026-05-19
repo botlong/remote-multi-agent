@@ -122,8 +122,13 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                     itemCount: messages.length,
-                    itemBuilder: (_, index) =>
-                        MessageBubble(message: messages[index]),
+                    itemBuilder: (_, index) {
+                      final msg = messages[index];
+                      return MessageBubble(
+                        message: msg,
+                        onDelete: () => _deleteMessage(msg.id),
+                      );
+                    },
                   ),
           ),
           if (_showCommands)
@@ -221,6 +226,20 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
   Future<void> _abort() async {
     final notifier = ref.read(gatewayChatProvider(widget.session.id).notifier);
     await notifier.abort();
+  }
+
+  Future<void> _deleteMessage(String messageId) async {
+    try {
+      final notifier =
+          ref.read(gatewayChatProvider(widget.session.id).notifier);
+      await notifier.deleteMessage(messageId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
   }
 
   void _scrollToBottom() {
