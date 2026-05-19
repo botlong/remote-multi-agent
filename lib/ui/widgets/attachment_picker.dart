@@ -79,7 +79,9 @@ class _AttachmentPickerSheet extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.4),
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.4,
+                  ),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -161,21 +163,25 @@ class _AttachmentPickerSheet extends StatelessWidget {
     final attachments = <Attachment>[];
     for (final file in result.files) {
       if (file.bytes != null) {
-        attachments.add(Attachment(
-          fileName: file.name,
-          mimeType: _guessMimeType(file.name, file.extension),
-          base64Data: base64Encode(file.bytes!),
-          bytes: file.bytes,
-        ));
+        attachments.add(
+          Attachment(
+            fileName: file.name,
+            mimeType: _guessMimeType(file.name, file.extension),
+            base64Data: base64Encode(file.bytes!),
+            bytes: file.bytes,
+          ),
+        );
       } else if (file.path != null) {
         // On mobile, read from path
         final bytes = await File(file.path!).readAsBytes();
-        attachments.add(Attachment(
-          fileName: file.name,
-          mimeType: _guessMimeType(file.name, file.extension),
-          base64Data: base64Encode(bytes),
-          bytes: bytes,
-        ));
+        attachments.add(
+          Attachment(
+            fileName: file.name,
+            mimeType: _guessMimeType(file.name, file.extension),
+            base64Data: base64Encode(bytes),
+            bytes: bytes,
+          ),
+        );
       }
     }
     if (attachments.isNotEmpty && context.mounted) {
@@ -260,7 +266,6 @@ class AttachmentPreviewStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (attachments.isEmpty) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
     return Container(
       height: 80,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

@@ -72,8 +72,7 @@ class CodexThreadListPage extends ConsumerWidget {
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final settings = ref.read(settingsControllerProvider);
-    final qqbotUrl =
-        'http://${Uri.parse(settings.baseUrl).host}:8787';
+    final qqbotUrl = 'http://${Uri.parse(settings.baseUrl).host}:8787';
     final dir = await showDirectoryPicker(
       context,
       qqbotBaseUrl: qqbotUrl,

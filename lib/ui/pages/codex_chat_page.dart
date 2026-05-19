@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/message.dart';
-import '../../state/codex_chat_store.dart';
 import '../../state/codex_providers.dart';
 import '../../state/codex_thread_store.dart';
 import '../../state/settings_store.dart';
@@ -80,9 +79,8 @@ class _CodexChatPageState extends ConsumerState<CodexChatPage> {
     // include filenames inline so the agent can read them via shell tools.
     var prompt = text;
     if (_attachments.isNotEmpty) {
-      final names = _attachments
-          .map((a) => '- ${a.fileName} (${a.mimeType})')
-          .join('\n');
+      final names =
+          _attachments.map((a) => '- ${a.fileName} (${a.mimeType})').join('\n');
       prompt = '$prompt\n\nAttachments available in working directory:\n$names';
     }
 
@@ -102,9 +100,7 @@ class _CodexChatPageState extends ConsumerState<CodexChatPage> {
             .read(codexThreadListProvider.notifier)
             .updateThreadId(widget.localKey, tid);
       }
-      await ref
-          .read(codexThreadListProvider.notifier)
-          .touch(widget.localKey);
+      await ref.read(codexThreadListProvider.notifier).touch(widget.localKey);
       _scrollToBottom(force: true);
     } catch (err) {
       if (!mounted) return;
@@ -202,8 +198,7 @@ class _CodexChatPageState extends ConsumerState<CodexChatPage> {
                       vertical: 8,
                     ),
                     itemCount: messages.length,
-                    itemBuilder: (_, i) =>
-                        MessageBubble(message: messages[i]),
+                    itemBuilder: (_, i) => MessageBubble(message: messages[i]),
                   ),
           ),
           if (_attachments.isNotEmpty)

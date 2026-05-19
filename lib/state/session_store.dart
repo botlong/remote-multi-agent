@@ -99,8 +99,8 @@ class SessionListController extends StateNotifier<SessionListState> {
   void _onEvent(SseEvent ev) {
     final type = ev.data['type'] as String? ?? ev.type;
     if (type != 'session.updated') return;
-    final info =
-        ((ev.data['properties'] as Map?)?['info'] as Map?)?.cast<String, dynamic>();
+    final info = ((ev.data['properties'] as Map?)?['info'] as Map?)
+        ?.cast<String, dynamic>();
     if (info == null) return;
     final updated = Session.fromJson(info);
     final next = [...state.items];

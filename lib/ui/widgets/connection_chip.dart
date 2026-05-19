@@ -9,12 +9,9 @@ class ConnectionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, icon) = switch (state) {
-      SseState.connected =>
-        ('Live', Colors.green, Icons.circle),
-      SseState.connecting =>
-        ('Connecting', Colors.orange, Icons.sync),
-      SseState.disconnected =>
-        ('Offline', Colors.red, Icons.cloud_off),
+      SseState.connected => ('Live', Colors.green, Icons.circle),
+      SseState.connecting => ('Connecting', Colors.orange, Icons.sync),
+      SseState.disconnected => ('Offline', Colors.red, Icons.cloud_off),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -29,7 +26,11 @@ class ConnectionChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

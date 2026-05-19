@@ -136,7 +136,8 @@ class _ToolPartViewState extends State<ToolPartView> {
               _Section(
                 title: 'Input',
                 child: _CodeBlock(
-                  text: const JsonEncoder.withIndent('  ').convert(widget.part.input),
+                  text: const JsonEncoder.withIndent('  ')
+                      .convert(widget.part.input),
                 ),
               ),
             if (widget.part.output != null)

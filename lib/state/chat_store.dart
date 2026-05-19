@@ -134,7 +134,8 @@ class ChatController extends StateNotifier<ChatState> {
 
   void _onEvent(SseEvent ev) {
     final type = ev.data['type'] as String? ?? ev.type;
-    final props = (ev.data['properties'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final props =
+        (ev.data['properties'] as Map?)?.cast<String, dynamic>() ?? const {};
 
     switch (type) {
       case 'message.updated':
@@ -145,7 +146,9 @@ class ChatController extends StateNotifier<ChatState> {
         _onPartDelta(props);
       case 'session.error':
         final err = props['error'];
-        state = state.copyWith(error: err is Map ? err['message'] as String? : err?.toString());
+        state = state.copyWith(
+          error: err is Map ? err['message'] as String? : err?.toString(),
+        );
       case 'server.connected':
       case 'session.updated':
         // We don't change message state here; session updates affect the
@@ -157,7 +160,9 @@ class ChatController extends StateNotifier<ChatState> {
   void _onMessageUpdated(Map<String, dynamic> props) {
     final info = (props['info'] as Map?)?.cast<String, dynamic>();
     if (info == null) return;
-    if (info['sessionID'] != null && info['sessionID'] != state.sessionId) return;
+    if (info['sessionID'] != null && info['sessionID'] != state.sessionId) {
+      return;
+    }
 
     final incoming = Message.fromJson(info);
     final existing = state.messages[incoming.id];

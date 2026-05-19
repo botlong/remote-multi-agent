@@ -78,10 +78,8 @@ class CodexThreadListState {
   static const empty = CodexThreadListState(items: []);
 }
 
-class CodexThreadListController
-    extends StateNotifier<CodexThreadListState> {
-  CodexThreadListController(this._prefs)
-      : super(_load(_prefs));
+class CodexThreadListController extends StateNotifier<CodexThreadListState> {
+  CodexThreadListController(this._prefs) : super(_load(_prefs));
 
   final SharedPreferences _prefs;
   static const _kKey = 'codex.threads';
@@ -168,8 +166,9 @@ class CodexThreadListController
   }
 }
 
-final codexThreadListProvider = StateNotifierProvider<
-    CodexThreadListController, CodexThreadListState>((ref) {
+final codexThreadListProvider =
+    StateNotifierProvider<CodexThreadListController, CodexThreadListState>(
+        (ref) {
   final prefs = ref.watch(sharedPreferencesProvider).maybeWhen(
         data: (v) => v,
         orElse: () => null,

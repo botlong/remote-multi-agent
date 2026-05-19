@@ -31,6 +31,7 @@ class Message {
   final MessageRole role;
   final String sessionId;
   final MessageStatus status;
+
   /// Parts in arrival order. Map for O(1) updates by id; we expose insertion
   /// order via [orderedParts].
   final Map<String, Part> parts;
@@ -81,8 +82,10 @@ class Message {
       parts: parsedParts,
       createdAtMs: (info['time'] as Map?)?['created'] as int?,
       completedAtMs: (info['time'] as Map?)?['completed'] as int?,
-      modelId: info['modelID'] as String? ?? (info['model'] as Map?)?['id'] as String?,
-      providerId: info['providerID'] as String? ?? (info['model'] as Map?)?['providerID'] as String?,
+      modelId: info['modelID'] as String? ??
+          (info['model'] as Map?)?['id'] as String?,
+      providerId: info['providerID'] as String? ??
+          (info['model'] as Map?)?['providerID'] as String?,
     );
   }
 

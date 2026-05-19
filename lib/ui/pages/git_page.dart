@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/git_client.dart';
 import '../../state/codex_thread_store.dart';
-import '../../state/providers.dart';
 import '../../state/settings_store.dart';
 
 // ---------------------------------------------------------------------------
@@ -322,8 +321,11 @@ class _DirectoryHeader extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       child: Row(
         children: [
-          Icon(Icons.folder_outlined,
-              size: 18, color: theme.colorScheme.primary),
+          Icon(
+            Icons.folder_outlined,
+            size: 18,
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -416,10 +418,8 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final lines = statusOutput
-        .split('\n')
-        .where((l) => l.trim().isNotEmpty)
-        .toList();
+    final lines =
+        statusOutput.split('\n').where((l) => l.trim().isNotEmpty).toList();
 
     return Card(
       elevation: 0,
@@ -434,7 +434,11 @@ class _StatusCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.list_alt, size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.list_alt,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Text('Status', style: theme.textTheme.titleSmall),
                 const Spacer(),
@@ -485,7 +489,8 @@ class _StatusLine extends StatelessWidget {
     final statusCode = line.length >= 2 ? line.substring(0, 2) : '??';
     final fileName = line.length > 3 ? line.substring(3) : line;
 
-    final (Color color, IconData icon, String label) = switch (statusCode.trim()) {
+    final (Color color, IconData icon, String label) =
+        switch (statusCode.trim()) {
       'M' || 'MM' => (Colors.orange, Icons.edit_outlined, 'Modified'),
       'A' || 'AM' => (Colors.green, Icons.add_circle_outline, 'Added'),
       'D' => (Colors.red, Icons.remove_circle_outline, 'Deleted'),
@@ -505,7 +510,7 @@ class _StatusLine extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -559,8 +564,11 @@ class _DiffCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.difference_outlined,
-                    size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.difference_outlined,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Text('Diff', style: theme.textTheme.titleSmall),
               ],
@@ -591,9 +599,8 @@ class _DiffCard extends StatelessWidget {
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: lines
-                            .map((line) => _DiffLine(line: line))
-                            .toList(),
+                        children:
+                            lines.map((line) => _DiffLine(line: line)).toList(),
                       ),
                     ),
                   ),
@@ -638,26 +645,32 @@ class _DiffLine extends StatelessWidget {
     if (line.startsWith('+++') || line.startsWith('---')) {
       // File header lines
       return (
-        isDark ? Colors.blue.shade900.withOpacity(0.3) : Colors.blue.shade50,
+        isDark
+            ? Colors.blue.shade900.withValues(alpha: 0.3)
+            : Colors.blue.shade50,
         isDark ? Colors.blue.shade200 : Colors.blue.shade900,
       );
     }
     if (line.startsWith('+')) {
       return (
-        isDark ? Colors.green.shade900.withOpacity(0.3) : Colors.green.shade50,
+        isDark
+            ? Colors.green.shade900.withValues(alpha: 0.3)
+            : Colors.green.shade50,
         isDark ? Colors.green.shade300 : Colors.green.shade900,
       );
     }
     if (line.startsWith('-')) {
       return (
-        isDark ? Colors.red.shade900.withOpacity(0.3) : Colors.red.shade50,
+        isDark
+            ? Colors.red.shade900.withValues(alpha: 0.3)
+            : Colors.red.shade50,
         isDark ? Colors.red.shade300 : Colors.red.shade900,
       );
     }
     if (line.startsWith('@@')) {
       return (
         isDark
-            ? Colors.purple.shade900.withOpacity(0.2)
+            ? Colors.purple.shade900.withValues(alpha: 0.2)
             : Colors.purple.shade50,
         isDark ? Colors.purple.shade200 : Colors.purple.shade700,
       );

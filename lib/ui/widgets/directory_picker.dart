@@ -60,15 +60,17 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
   void initState() {
     super.initState();
     _currentPath = widget.initialPath;
-    _dio = Dio(BaseOptions(
-      baseUrl: widget.qqbotBaseUrl.replaceAll(RegExp(r'/$'), ''),
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-      headers: {
-        if (widget.bearerToken.isNotEmpty)
-          'Authorization': 'Bearer ${widget.bearerToken}',
-      },
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: widget.qqbotBaseUrl.replaceAll(RegExp(r'/$'), ''),
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        headers: {
+          if (widget.bearerToken.isNotEmpty)
+            'Authorization': 'Bearer ${widget.bearerToken}',
+        },
+      ),
+    );
     _loadDirs();
   }
 
@@ -91,10 +93,12 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
       );
       final data = res.data ?? {};
       final dirs = (data['dirs'] as List<dynamic>?)
-              ?.map((d) => _DirEntry(
-                    name: (d as Map)['name'] as String? ?? '',
-                    path: d['path'] as String? ?? '',
-                  ))
+              ?.map(
+                (d) => _DirEntry(
+                  name: (d as Map)['name'] as String? ?? '',
+                  path: d['path'] as String? ?? '',
+                ),
+              )
               .toList() ??
           [];
       if (!mounted) return;
@@ -218,7 +222,10 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
                       decoration: InputDecoration(
                         hintText: 'New folder name',
                         isDense: true,
-                        prefixIcon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                        prefixIcon: const Icon(
+                          Icons.create_new_folder_outlined,
+                          size: 20,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -273,10 +280,12 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
 
   Widget _buildList(ThemeData theme) {
     if (_loading) {
-      return const Center(child: Padding(
-        padding: EdgeInsets.all(24),
-        child: CircularProgressIndicator(),
-      ));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: CircularProgressIndicator(),
+        ),
+      );
     }
     if (_error != null) {
       return Center(

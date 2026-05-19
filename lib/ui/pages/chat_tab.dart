@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'codex_thread_list_page.dart';
+import 'project_list_page.dart';
 
-/// Chat tab with its own nested [Navigator] so that tapping a thread
-/// pushes [CodexChatPage] within this tab without affecting the bottom nav.
+/// Project tab with its own nested [Navigator] so that deeper project flows
+/// stay inside the tab without affecting the bottom nav.
 class ChatTab extends StatefulWidget {
   const ChatTab({super.key});
 
@@ -30,7 +30,7 @@ class _ChatTabState extends State<ChatTab> {
         onGenerateRoute: (settings) {
           return MaterialPageRoute<void>(
             settings: settings,
-            builder: (_) => const CodexThreadListPage(),
+            builder: (_) => const ProjectListPage(),
           );
         },
       ),
