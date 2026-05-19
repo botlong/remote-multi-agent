@@ -11,6 +11,7 @@ import '../models/gateway_session.dart';
 import '../models/message.dart';
 import '../models/part.dart';
 import 'gateway_client_provider.dart';
+import 'notification_service.dart';
 
 enum GatewayChatConnectionState { connecting, connected, disconnected }
 
@@ -32,6 +33,7 @@ class GatewayChatState {
   final GatewayChatConnectionState connection;
   final String? error;
 
+  String get sessionTitle => session?.title ?? '';
   Iterable<Message> get orderedMessages => messages.values;
   List<Message> get items => messages.values.toList(growable: false);
 
@@ -175,14 +177,23 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
       case 'session.updated':
         _onSession(event.data);
       case 'session.started':
+        state = state.copyWith(isStreaming: true);
       case 'session.completed':
-        state = state.copyWith(isStreaming: event.type != 'session.completed');
+        state = state.copyWith(isStreaming: false);
+        showAppNotification(
+          title: 'Agent finished',
+          body: state.sessionTitle.isNotEmpty
+              ? state.sessionTitle
+              : 'Session completed successfully',
+        );
       case 'session.error':
-        state = state.copyWith(
-          isStreaming: false,
-          error: _stringMessage(event.data['error']) ??
-              _stringMessage(event.data['message']) ??
-              'session error',
+        final errMsg = _stringMessage(event.data['error']) ??
+            _stringMessage(event.data['message']) ??
+            'session error';
+        state = state.copyWith(isStreaming: false, error: errMsg);
+        showAppNotification(
+          title: 'Agent error',
+          body: errMsg,
         );
       case 'status.updated':
         state = state.copyWith(
