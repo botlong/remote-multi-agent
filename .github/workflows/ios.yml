@@ -1,0 +1,78 @@
+name: iOS unsigned IPA
+
+# Builds an unsigned IPA suitable for sideloading via AltStore / Sideloadly.
+# This avoids the cost of an Apple Developer Program membership ($99/year).
+# To install: download artifact -> Sideloadly -> drag IPA -> connect iPhone -> install.
+# Free Apple ID gives a 7-day cert; you re-sign once a week.
+#
+# When you eventually want TestFlight upload, swap this out for fastlane match
+# or Apple App Store Connect API authentication. See README.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter --version
+
+      # Wipe any stale derived data / pods that may be cached. Without this,
+      # back-to-back runs occasionally fail with "Building a deployable iOS
+      # app requires a selected Development Team" even though we pass
+      # --no-codesign — a known macos-runner cache-pollution issue.
+      - name: Clean build state
+        run: |
+          flutter clean
+          rm -rf ios/Pods ios/Podfile.lock
+          flutter pub get
+
+      # Two-step build: precompile Dart bundle with `flutter build`, then run
+      # xcodebuild directly. The combined `flutter build ios` wrapper sometimes
+      # spuriously reports "Development Team required" on macos-15 runners
+      # even with `--no-codesign`. Skipping its post-build check fixes that.
+      - name: Precompile Flutter assets
+        run: flutter build ios --release --no-codesign --config-only
+
+      - name: Xcode build (manual)
+        run: |
+          set -euo pipefail
+          cd ios
+          pod install --repo-update
+          xcodebuild \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_DIR="ios/build/Build/Products/Release-iphoneos"
+          test -d "$APP_DIR/Runner.app" || (echo "Runner.app missing in $APP_DIR"; ls -la "$APP_DIR" || true; exit 1)
+          mkdir -p Payload
+          cp -R "$APP_DIR/Runner.app" Payload/
+          zip -qry "$GITHUB_WORKSPACE/opencode_mobile-${{ github.sha }}.ipa" Payload
+          ls -la opencode_mobile-*.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: opencode_mobile-${{ github.sha }}.ipa
+          retention-days: 14

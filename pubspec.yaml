@@ -1,0 +1,62 @@
+name: remote_multi_agent
+description: A mobile client for OpenCode — connect to a remote OpenCode server and tail its event stream.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Networking
+  dio: ^5.7.0                  # HTTP client (Codex/AgentLens use fetch; Dio gives interceptors + retries)
+  http: ^1.2.2                 # Used inside SSE client for streaming response
+
+  # State management — Riverpod scales nicely from "single screen" to "complex state machines"
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Persistence
+  shared_preferences: ^2.3.2   # Settings (server URL, bearer token, last selected session)
+
+  # JSON / models
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # UI building blocks
+  flutter_markdown_plus: ^1.0.4 # flutter_markdown is discontinued; this is the maintained fork
+  flutter_highlight: ^0.7.0    # Syntax highlight inside markdown code blocks
+  flutter_svg: ^2.0.10
+  google_fonts: ^6.2.1
+
+  # Markdown rendering support
+  markdown: ^7.2.2             # AST types used by flutter_markdown_plus builders
+  url_launcher: ^6.3.1         # Open links in external browser
+
+  # File & image picking
+  image_picker: ^1.1.2         # Camera / gallery image selection
+  file_picker: ^8.1.3          # General file selection
+
+  # Utilities
+  intl: ^0.20.0
+  collection: ^1.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+  # codegen (Riverpod / Freezed / json_serializable)
+  build_runner: ^2.4.13
+  riverpod_generator: ^2.4.3
+  freezed: ^2.5.7
+  json_serializable: ^6.8.0
+  custom_lint: ^0.7.3
+  riverpod_lint: ^2.6.4
+
+flutter:
+  uses-material-design: true
