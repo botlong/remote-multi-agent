@@ -49,7 +49,9 @@ jobs:
         run: |
           set -euo pipefail
           cd ios
-          pod install --repo-update
+          if [ -f Podfile ]; then
+            pod install --repo-update
+          fi
           xcodebuild \
             -workspace Runner.xcworkspace \
             -scheme Runner \
