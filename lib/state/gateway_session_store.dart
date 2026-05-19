@@ -108,11 +108,11 @@ class GatewaySessionStore extends StateNotifier<GatewaySessionState> {
         return GatewaySession(
           id: s.id,
           projectId: s.projectId,
+          directory: s.directory,
           agentId: s.agentId,
           title: newTitle,
           modelId: s.modelId,
           status: s.status,
-          agentSessionId: s.agentSessionId,
           createdAtMs: s.createdAtMs,
           updatedAtMs: DateTime.now().millisecondsSinceEpoch,
           raw: s.raw,
