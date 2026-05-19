@@ -139,7 +139,10 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
     if (name.isEmpty) return;
 
     final sep = _currentPath.contains('/') ? '/' : '\\';
-    final newPath = '$_currentPath$sep$name';
+    final base = _currentPath.endsWith(sep)
+        ? _currentPath
+        : '$_currentPath$sep';
+    final newPath = '$base$name';
 
     setState(() => _creatingFolder = true);
     try {

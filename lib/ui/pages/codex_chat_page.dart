@@ -140,11 +140,11 @@ class _CodexChatPageState extends ConsumerState<CodexChatPage> {
     if (keyboardJustRose) _scrollToBottom(force: true);
     if (messages.isNotEmpty) _scrollToBottom();
 
-    final thread = ref
+    final threadMatches = ref
         .watch(codexThreadListProvider)
         .items
-        .where((t) => t.localKey == widget.localKey)
-        .firstOrNull;
+        .where((t) => t.localKey == widget.localKey);
+    final thread = threadMatches.isEmpty ? null : threadMatches.first;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -372,12 +372,5 @@ class _InputBar extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-extension _Iterable<E> on Iterable<E> {
-  E? get firstOrNull {
-    final it = iterator;
-    return it.moveNext() ? it.current : null;
   }
 }

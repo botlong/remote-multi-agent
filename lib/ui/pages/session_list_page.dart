@@ -66,7 +66,7 @@ class SessionListPage extends ConsumerWidget {
     final selectedDir = await showDirectoryPicker(
       context,
       gatewayBaseUrl: qqbotUrl,
-      bearerToken: 'qqbot-dev-token-please-rotate-me',
+      bearerToken: settings.bearerToken,
       initialPath: 'D:\\',
     );
     if (selectedDir == null || !context.mounted) return;
