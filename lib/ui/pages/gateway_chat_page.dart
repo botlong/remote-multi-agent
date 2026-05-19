@@ -363,7 +363,9 @@ class _InputBar extends StatelessWidget {
                   minLines: 1,
                   maxLines: 6,
                   decoration: InputDecoration(
-                    hintText: 'Message, /command, or \$shell',
+                    hintText: running
+                        ? 'Send guidance to running agent...'
+                        : 'Message, /command, or \$shell',
                     filled: true,
                     fillColor: theme.colorScheme.surfaceContainerHigh,
                     border: OutlineInputBorder(
@@ -378,11 +380,27 @@ class _InputBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton.filled(
-                icon: Icon(running ? Icons.stop : Icons.send),
-                tooltip: running ? 'Stop agent' : 'Send',
-                onPressed: running ? onAbort : onSend,
-              ),
+              if (running) ...[
+                IconButton.filled(
+                  icon: const Icon(Icons.send),
+                  tooltip: 'Send guidance',
+                  onPressed: onSend,
+                ),
+                const SizedBox(width: 4),
+                IconButton.filled(
+                  icon: const Icon(Icons.stop),
+                  tooltip: 'Stop agent',
+                  style: IconButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                  ),
+                  onPressed: onAbort,
+                ),
+              ] else
+                IconButton.filled(
+                  icon: const Icon(Icons.send),
+                  tooltip: 'Send',
+                  onPressed: onSend,
+                ),
             ],
           ),
         ),

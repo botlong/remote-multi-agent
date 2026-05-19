@@ -233,6 +233,41 @@ function appendTextToMessage(message, delta) {
   return next;
 }
 
+function appendToolPartToMessage(message, toolCall) {
+  const next = structuredClone(message);
+  const partId = `${next.id}_tool_${toolCall.callId || toolCall.toolUseId || crypto.randomUUID()}`;
+  // Check if this tool part already exists (update vs create).
+  const existingIdx = next.parts.findIndex(
+    (p) => p.type === 'tool' && p.toolCallId === (toolCall.callId || toolCall.toolUseId),
+  );
+  const toolPart = {
+    id: partId,
+    messageID: next.id,
+    sessionID: next.sessionID,
+    type: 'tool',
+    name: toolCall.name,
+    input: toolCall.input || '',
+    output: toolCall.output || '',
+    status: toolCall.status || 'running',
+    toolCallId: toolCall.callId || toolCall.toolUseId || null,
+  };
+  if (existingIdx >= 0) {
+    // Merge: keep existing input if new one is empty, append output.
+    const existing = next.parts[existingIdx];
+    toolPart.id = existing.id;
+    if (!toolPart.input && existing.input) toolPart.input = existing.input;
+    if (existing.output && toolPart.output) {
+      toolPart.output = existing.output + toolPart.output;
+    } else if (existing.output) {
+      toolPart.output = existing.output;
+    }
+    next.parts[existingIdx] = toolPart;
+  } else {
+    next.parts.push(toolPart);
+  }
+  return next;
+}
+
 function completeMessage(message, status = 'completed') {
   const next = structuredClone(message);
   next.status = status;
@@ -321,6 +356,7 @@ function defaultDirectories(store) {
 module.exports = {
   JsonStore,
   appendTextToMessage,
+  appendToolPartToMessage,
   browseDirectories,
   completeMessage,
   createTextMessage,

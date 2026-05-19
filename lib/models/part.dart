@@ -49,15 +49,28 @@ sealed class Part {
         );
       case 'tool':
         final state = json['state'] as Map<String, dynamic>?;
+        final toolName = json['tool'] as String?
+            ?? json['name'] as String?
+            ?? state?['tool'] as String?
+            ?? 'unknown';
+        final toolStatus = json['status'] as String?
+            ?? state?['status'] as String?;
+        final inputRaw = json['input'] ?? state?['input'];
+        final Map<String, dynamic>? inputMap = inputRaw is Map
+            ? inputRaw.cast<String, dynamic>()
+            : inputRaw is String && inputRaw.isNotEmpty
+                ? <String, dynamic>{'command': inputRaw}
+                : null;
+        final outputRaw = json['output'] ?? state?['output'];
         return ToolPart(
           id: id,
           messageId: messageId,
           sessionId: sessionId,
-          tool: json['tool'] as String? ?? 'unknown',
-          status: ToolStatus.from(state?['status'] as String?),
-          input: (state?['input'] as Map?)?.cast<String, dynamic>(),
-          output: state?['output'] as Object?,
-          error: state?['error'] as String?,
+          tool: toolName,
+          status: ToolStatus.from(toolStatus),
+          input: inputMap,
+          output: outputRaw,
+          error: json['error'] as String? ?? state?['error'] as String?,
         );
       case 'image':
         return ImagePart(

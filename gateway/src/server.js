@@ -8,6 +8,7 @@ const { EventBus, makeEvent } = require('./events');
 const {
   JsonStore,
   appendTextToMessage,
+  appendToolPartToMessage,
   browseDirectories,
   completeMessage,
   createTextMessage,
@@ -164,13 +165,16 @@ async function handleProjects({ request, response, segments, store, registry }) 
           nativeSession = null;
         }
       }
+      const rawExtra = {};
+      if (body.sandbox) rawExtra.sandbox = body.sandbox;
+      if (body.permissionMode) rawExtra.permissionMode = body.permissionMode;
       const session = await store.createSession({
         project,
         agentId: body.agentId,
         modelId: body.modelId,
         title: body.title || nativeSession?.title || `${adapter.displayName} session`,
         agentSessionId: nativeSession?.agentSessionId,
-        raw: nativeSession ? { agentSession: nativeSession.raw } : {},
+        raw: { ...(nativeSession ? { agentSession: nativeSession.raw } : {}), ...rawExtra },
       });
       return sendJson(response, session, 201);
     }
@@ -247,6 +251,32 @@ async function handleSessions({
       const parts = Array.isArray(body.parts) ? body.parts : [];
       if (!text.trim() && parts.length === 0) {
         throw httpError(400, 'text or parts are required');
+      }
+      // If session is already running, inject guidance instead of rejecting.
+      const existingRun = activeRuns.get(session.id);
+      if (existingRun) {
+        const userMessage = createTextMessage({
+          sessionId: session.id,
+          role: 'user',
+          text,
+        });
+        await store.appendMessage(session.id, userMessage);
+        emit(bus, 'message.created', session, { message: userMessage }, userMessage);
+
+        const adapter = registry.get(session.agentId);
+        let injected = false;
+
+        // Try stdin write (Codex).
+        if (existingRun.write) {
+          injected = existingRun.write(text);
+        }
+        // Try native API injection (OpenCode).
+        if (!injected && adapter?.injectMessage) {
+          await adapter.injectMessage(session, text, parts);
+          injected = true;
+        }
+        console.log(`[inject] session=${session.id} agent=${session.agentId} injected=${injected} text=${text.slice(0,80)}`);
+        return sendJson(response, { accepted: true, injected, sessionId: session.id }, 202);
       }
       await startTurn({
         session,
@@ -378,6 +408,18 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
             },
             { delta },
           );
+        });
+        return textWrite;
+      },
+      onToolCall: (toolCall) => {
+        console.log(`[onToolCall] name=${toolCall.name} status=${toolCall.status}`);
+        textWrite = textWrite.then(async () => {
+          assistantMessage = appendToolPartToMessage(assistantMessage, toolCall);
+          await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
+          const toolPart = assistantMessage.parts.find(
+            (p) => p.type === 'tool' && p.toolCallId === (toolCall.callId || toolCall.toolUseId),
+          ) || assistantMessage.parts[assistantMessage.parts.length - 1];
+          emit(bus, 'message.part.updated', running, { part: toolPart }, toolPart);
         });
         return textWrite;
       },

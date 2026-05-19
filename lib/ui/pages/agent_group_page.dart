@@ -22,6 +22,7 @@ class AgentGroupPage extends ConsumerStatefulWidget {
 class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
   GatewayAgentView? _selectedAgent;
   GatewayModelView? _selectedModel;
+  String? _selectedPermission;
   Future<List<GatewayModelView>>? _modelsFuture;
   bool _modelLookupComplete = false;
   bool _creating = false;
@@ -72,6 +73,16 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
                   _modelsFuture = _loadModels(agent.id);
                 }),
               ),
+          if (_selectedAgent != null) ...[
+            const SizedBox(height: 20),
+            Text('Permission mode', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            _PermissionPicker(
+              agentId: _selectedAgent!.id,
+              selected: _selectedPermission,
+              onSelected: (v) => setState(() => _selectedPermission = v),
+            ),
+          ],
           if (_selectedAgent != null && _selectedAgent!.supportsModels) ...[
             const SizedBox(height: 20),
             Text('Model', style: Theme.of(context).textTheme.titleMedium),
@@ -170,9 +181,12 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
     try {
       final notifier =
           ref.read(gatewaySessionListProvider(widget.project.id).notifier);
+      final isCodex = agent.id == 'codex';
       final created = await notifier.createSession(
         agentId: agent.id,
         modelId: _selectedModel?.id,
+        sandbox: isCodex ? _selectedPermission : null,
+        permissionMode: !isCodex ? _selectedPermission : null,
       );
       if (!mounted) return;
       final session = readSession(created);
@@ -339,6 +353,63 @@ class _ModelPicker extends StatelessWidget {
     );
     onSelected(match);
   }
+}
+
+class _PermissionPicker extends StatelessWidget {
+  const _PermissionPicker({
+    required this.agentId,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String agentId;
+  final String? selected;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final options = _optionsFor(agentId);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        for (final entry in options)
+          ChoiceChip(
+            label: Text(entry.label),
+            selected: selected == entry.value,
+            onSelected: (on) => onSelected(on ? entry.value : null),
+            tooltip: entry.description,
+          ),
+      ],
+    );
+  }
+
+  static List<_PermOption> _optionsFor(String agentId) {
+    return switch (agentId) {
+      'codex' => const [
+          _PermOption('full-auto', 'Full Auto', 'No confirmation needed'),
+          _PermOption('workspace-write', 'Write', 'Write to workspace (default)'),
+          _PermOption('workspace-read', 'Read-only', 'Read workspace only'),
+          _PermOption('locked', 'Locked', 'No file access'),
+        ],
+      'claude-code' => const [
+          _PermOption('default', 'Default', 'Ask for permissions as needed'),
+          _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
+          _PermOption('bypassPermissions', 'Full Auto', 'Skip all permission prompts'),
+        ],
+      _ => const [
+          _PermOption('build', 'Build', 'Standard build mode'),
+          _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
+        ],
+    };
+  }
+}
+
+class _PermOption {
+  const _PermOption(this.value, this.label, this.description);
+  final String value;
+  final String label;
+  final String description;
 }
 
 class _EmptyCatalog extends StatelessWidget {

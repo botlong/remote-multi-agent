@@ -138,6 +138,8 @@ class GatewayClient {
     required String agentId,
     String? modelId,
     String? title,
+    String? sandbox,
+    String? permissionMode,
   }) async {
     final res = await _dio.post<Map<String, dynamic>>(
       '/projects/${_path(projectId)}/sessions',
@@ -145,6 +147,9 @@ class GatewayClient {
         'agentId': agentId,
         if (modelId != null && modelId.isNotEmpty) 'modelId': modelId,
         if (title != null && title.isNotEmpty) 'title': title,
+        if (sandbox != null && sandbox.isNotEmpty) 'sandbox': sandbox,
+        if (permissionMode != null && permissionMode.isNotEmpty)
+          'permissionMode': permissionMode,
       },
     );
     return GatewaySession.fromJson(res.data ?? const <String, dynamic>{});

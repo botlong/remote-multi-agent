@@ -205,6 +205,7 @@ class CodexAdapter {
 }
 
 function buildCodexArgs(session) {
+  const sandbox = (session.raw && session.raw.sandbox) || process.env.CODEX_SANDBOX || 'workspace-write';
   const args = session.agentSessionId
     ? ['exec', 'resume', '--json', '--skip-git-repo-check']
     : [
@@ -215,7 +216,7 @@ function buildCodexArgs(session) {
         '--cd',
         session.directory,
         '--sandbox',
-        process.env.CODEX_SANDBOX || 'workspace-write',
+        sandbox,
         '--skip-git-repo-check',
       ];
   if (session.modelId) args.push('--model', session.modelId);
@@ -273,8 +274,9 @@ class ClaudeCodeAdapter {
       '--verbose',
       '--include-partial-messages',
     ];
-    if (process.env.CLAUDE_CODE_PERMISSION_MODE) {
-      args.push('--permission-mode', process.env.CLAUDE_CODE_PERMISSION_MODE);
+    const permissionMode = (session.raw && session.raw.permissionMode) || process.env.CLAUDE_CODE_PERMISSION_MODE;
+    if (permissionMode) {
+      args.push('--permission-mode', permissionMode);
     }
     if (session.modelId) args.push('--model', session.modelId);
     if (session.agentSessionId) args.push('--resume', session.agentSessionId);
@@ -392,6 +394,28 @@ class OpenCodeAdapter {
     return true;
   }
 
+  async injectMessage(session, text, parts = []) {
+    if (!session.agentSessionId) return false;
+    const { providerId, modelId } = splitOpenCodeModel(session.modelId);
+    const messageParts = [
+      ...(text.trim() ? [{ type: 'text', text }] : []),
+      ...parts.filter((part) => part && typeof part === 'object'),
+    ];
+    await this.server.request(
+      `/session/${encodeURIComponent(session.agentSessionId)}/message`,
+      {
+        method: 'POST',
+        body: {
+          providerID: providerId,
+          modelID: modelId,
+          mode: (session.raw && session.raw.permissionMode) || process.env.OPENCODE_MODE || 'build',
+          parts: messageParts,
+        },
+      },
+    );
+    return true;
+  }
+
   async runNative({ session, prompt, parts = [], onEvent, onExit }) {
     if (!session.agentSessionId) return null;
 
@@ -437,7 +461,7 @@ class OpenCodeAdapter {
         body: {
           providerID: providerId,
           modelID: modelId,
-          mode: process.env.OPENCODE_MODE || 'build',
+          mode: (session.raw && session.raw.permissionMode) || process.env.OPENCODE_MODE || 'build',
           parts: messageParts,
         },
         signal: abortController.signal,
@@ -656,6 +680,7 @@ function runJsonCli({
   agentId,
   onEvent,
   onText,
+  onToolCall,
   onAgentSessionId,
   onExit,
 }) {
@@ -696,6 +721,10 @@ function runJsonCli({
       state.sawText = true;
       onText(delta);
     }
+    if (onToolCall) {
+      const toolCall = extractToolCall(raw);
+      if (toolCall) onToolCall(toolCall);
+    }
   });
   readLines(child.stderr, (line) => {
     state.stderrLines.push(line);
@@ -707,9 +736,7 @@ function runJsonCli({
     });
   });
   if (stdin !== null && stdin !== undefined) {
-    child.stdin.end(stdin);
-  } else {
-    child.stdin.end();
+    child.stdin.write(stdin + '\n');
   }
   let settled = false;
   const finish = (result) => {
@@ -732,6 +759,13 @@ function runJsonCli({
   });
   return {
     pid: child.pid,
+    write(text) {
+      if (!settled && child.stdin.writable) {
+        child.stdin.write(text + '\n');
+        return true;
+      }
+      return false;
+    },
     abort() {
       killProcessTree(child);
     },
@@ -800,6 +834,74 @@ function contentArrayText(content) {
       return '';
     })
     .join('');
+}
+
+/**
+ * Extract tool call info from agent JSON events.
+ *
+ * Codex:   { type: 'function_call', name: '...', arguments: '...' }
+ *          or item.content[].type === 'function_call'
+ * Claude:  { type: 'tool_use', name: '...', input: { ... } }
+ *          or content[].type === 'tool_use'
+ * OpenCode: handled natively via SSE part events.
+ */
+function extractToolCall(raw) {
+  // Codex function_call at top level
+  if (raw.type === 'function_call' && raw.name) {
+    return {
+      name: raw.name,
+      input: raw.arguments || raw.call_id || '',
+      status: raw.status || 'running',
+    };
+  }
+  // Codex function_call_output
+  if (raw.type === 'function_call_output') {
+    return {
+      name: raw.name || 'function_call',
+      output: typeof raw.output === 'string' ? raw.output : JSON.stringify(raw.output || ''),
+      status: 'completed',
+      callId: raw.call_id,
+    };
+  }
+  // Claude tool_use in content array
+  if (raw.type === 'content_block_start' && raw.content_block?.type === 'tool_use') {
+    return {
+      name: raw.content_block.name,
+      input: '',
+      status: 'running',
+      toolUseId: raw.content_block.id,
+    };
+  }
+  if (raw.type === 'tool_use' && raw.name) {
+    return {
+      name: raw.name,
+      input: typeof raw.input === 'string' ? raw.input : JSON.stringify(raw.input || {}),
+      status: 'running',
+      toolUseId: raw.id,
+    };
+  }
+  if (raw.type === 'tool_result') {
+    return {
+      name: raw.name || 'tool',
+      output: typeof raw.content === 'string' ? raw.content : JSON.stringify(raw.content || ''),
+      status: raw.is_error ? 'error' : 'completed',
+      toolUseId: raw.tool_use_id,
+    };
+  }
+  // Codex item-level tool calls
+  if (raw.item && Array.isArray(raw.item.content)) {
+    for (const block of raw.item.content) {
+      if (block.type === 'function_call' && block.name) {
+        return {
+          name: block.name,
+          input: block.arguments || '',
+          status: block.status || 'completed',
+          callId: block.call_id,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 function extractAgentSessionId(raw) {

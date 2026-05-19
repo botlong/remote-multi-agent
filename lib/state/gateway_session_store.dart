@@ -79,11 +79,15 @@ class GatewaySessionStore extends StateNotifier<GatewaySessionState> {
   Future<GatewaySession> createSession({
     required String agentId,
     String? modelId,
+    String? sandbox,
+    String? permissionMode,
   }) async {
     final session = await _client.createSession(
       projectId: state.projectId,
       agentId: agentId,
       modelId: modelId,
+      sandbox: sandbox,
+      permissionMode: permissionMode,
     );
     final sessions = [
       session,
@@ -95,6 +99,37 @@ class GatewaySessionStore extends StateNotifier<GatewaySessionState> {
       clearError: true,
     );
     return session;
+  }
+
+  Future<void> renameSession(String sessionId, String newTitle) async {
+    await _client.updateSession(sessionId, title: newTitle);
+    final sessions = state.sessions.map((s) {
+      if (s.id == sessionId) {
+        return GatewaySession(
+          id: s.id,
+          projectId: s.projectId,
+          agentId: s.agentId,
+          title: newTitle,
+          modelId: s.modelId,
+          status: s.status,
+          agentSessionId: s.agentSessionId,
+          createdAtMs: s.createdAtMs,
+          updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+          raw: s.raw,
+        );
+      }
+      return s;
+    }).toList();
+    state = state.copyWith(sessions: sessions);
+  }
+
+  Future<void> deleteSession(String sessionId) async {
+    await _client.deleteSession(sessionId);
+    final sessions = state.sessions.where((s) => s.id != sessionId).toList();
+    final selected = state.selectedSessionId == sessionId
+        ? (sessions.isEmpty ? null : sessions.first.id)
+        : state.selectedSessionId;
+    state = state.copyWith(sessions: sessions, selectedSessionId: selected);
   }
 
   void selectSession(String? sessionId) {
