@@ -7,7 +7,8 @@ agent execution; the app only talks to this server.
 
 - Codex: `codex exec --json`
 - Claude Code: `claude -p --output-format stream-json --verbose`
-- OpenCode: `opencode run --format json`
+- OpenCode: `opencode serve` HTTP/SSE proxy, with `opencode run --format json`
+  fallback when server mode is unavailable
 
 The gateway uses the CLI login state already configured on this machine.
 
@@ -51,6 +52,18 @@ The first gateway version has no authentication, matching
 | `CLAUDE_CODE_MODELS` | Comma-separated Claude model aliases to show in the picker. |
 | `CLAUDE_CODE_PERMISSION_MODE` | Optional Claude permission mode, for example `acceptEdits` or `dontAsk`. |
 | `OPENCODE_BIN` | Override OpenCode executable path. |
+| `OPENCODE_SERVER_URL` | Use an existing OpenCode server instead of starting `opencode serve`. |
+| `OPENCODE_SERVER_PASSWORD` | Password for an existing OpenCode server; sent with OpenCode's Basic auth scheme. Gateway-started OpenCode is local-only and does not set one by default. |
+| `OPENCODE_SERVER_HOST` | Host for gateway-started OpenCode server, default `127.0.0.1`. |
+| `OPENCODE_SERVER_PORT` | Port for gateway-started OpenCode server, default is a free port. |
+| `OPENCODE_SERVER_START_TIMEOUT_MS` | Startup wait for `opencode serve`, default `45000`. |
+| `OPENCODE_DEFAULT_MODEL` | Fallback model id when the app did not choose one, default `opencode/big-pickle`. |
+| `OPENCODE_MODE` | OpenCode message mode, default `build`. |
+
+For OpenCode, the gateway creates a native OpenCode session through
+`POST /session?directory=...`, stores that id as `agentSessionId`, sends turns
+through `POST /session/:id/message`, and bridges the global `/event` SSE stream
+back into the gateway's per-session event endpoint.
 
 ## API
 

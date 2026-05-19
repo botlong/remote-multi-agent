@@ -105,6 +105,7 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
   server.closeAllRuns = () => {
     for (const run of activeRuns.values()) run.abort();
     activeRuns.clear();
+    registry.close?.();
   };
   return server;
 }
@@ -141,11 +142,25 @@ async function handleProjects({ request, response, segments, store, registry }) 
       const body = await readJson(request);
       const adapter = registry.get(body.agentId);
       if (!adapter) throw httpError(400, `unknown agent: ${body.agentId}`);
+      let nativeSession = null;
+      if (adapter.createSession) {
+        try {
+          nativeSession = await adapter.createSession({
+            project,
+            modelId: body.modelId,
+            title: body.title || `${adapter.displayName} session`,
+          });
+        } catch (_) {
+          nativeSession = null;
+        }
+      }
       const session = await store.createSession({
         project,
         agentId: body.agentId,
         modelId: body.modelId,
-        title: body.title || `${adapter.displayName} session`,
+        title: body.title || nativeSession?.title || `${adapter.displayName} session`,
+        agentSessionId: nativeSession?.agentSessionId,
+        raw: nativeSession ? { agentSession: nativeSession.raw } : {},
       });
       return sendJson(response, session, 201);
     }
@@ -196,21 +211,34 @@ async function handleSessions({
     const run = activeRuns.get(session.id);
     if (run) run.abort();
     activeRuns.delete(session.id);
+    const adapter = registry.get(session.agentId);
+    if (adapter?.deleteSession) {
+      await adapter.deleteSession(session).catch(() => false);
+    }
     await store.deleteSession(session.id);
     return sendJson(response, { ok: true });
   }
 
   if (segments.length === 3 && segments[2] === 'messages') {
     if (request.method === 'GET') {
+      const adapter = registry.get(session.agentId);
+      if (adapter?.listMessages) {
+        const messages = await adapter.listMessages(session).catch(() => null);
+        if (Array.isArray(messages)) return sendJson(response, messages);
+      }
       return sendJson(response, store.listMessages(session.id));
     }
     if (request.method === 'POST') {
       const body = await readJson(request);
       const text = typeof body.text === 'string' ? body.text : '';
-      if (!text.trim()) throw httpError(400, 'text is required');
+      const parts = Array.isArray(body.parts) ? body.parts : [];
+      if (!text.trim() && parts.length === 0) {
+        throw httpError(400, 'text or parts are required');
+      }
       await startTurn({
         session,
         text,
+        parts,
         store,
         registry,
         bus,
@@ -224,7 +252,14 @@ async function handleSessions({
     const run = activeRuns.get(session.id);
     if (run) run.abort();
     activeRuns.delete(session.id);
-    const updated = await store.updateSession(session.id, { status: 'idle' });
+    const adapter = registry.get(session.agentId);
+    if (!run && adapter?.abort) {
+      await adapter.abort(session).catch(() => false);
+    }
+    const updated = await store.updateSession(session.id, {
+      status: 'idle',
+      raw: run ? { lastAborted: true } : {},
+    });
     emit(bus, 'session.updated', updated, { session: updated });
     return sendJson(response, { ok: true });
   }
@@ -244,100 +279,152 @@ async function handleSessions({
   throw httpError(404, 'not found');
 }
 
-async function startTurn({ session, text, store, registry, bus, activeRuns }) {
+async function startTurn({ session, text, parts = [], store, registry, bus, activeRuns }) {
   if (activeRuns.has(session.id)) {
     throw httpError(409, 'session already running');
   }
   const adapter = registry.get(session.agentId);
   if (!adapter) throw httpError(400, `unknown agent: ${session.agentId}`);
-
-  const userMessage = createTextMessage({
-    sessionId: session.id,
-    role: 'user',
-    text,
-  });
-  await store.appendMessage(session.id, userMessage);
-  emit(bus, 'message.created', session, { message: userMessage }, userMessage);
+  const canRunNative = Boolean(adapter.runNative && session.agentSessionId);
 
   const running = await store.updateSession(session.id, { status: 'running' });
   emit(bus, 'session.started', running, { session: running });
   emit(bus, 'session.updated', running, { session: running });
 
-  let assistantMessage = createTextMessage({
-    sessionId: session.id,
-    role: 'assistant',
-    text: '',
-    status: 'running',
-    modelId: session.modelId,
-  });
+  let assistantMessage = null;
   let textWrite = Promise.resolve();
-  await store.appendMessage(session.id, assistantMessage);
-  emit(bus, 'message.created', session, { message: assistantMessage }, assistantMessage);
+  let partId = null;
+  let run = null;
+  let aborted = false;
 
-  const partId = assistantMessage.parts[0].id;
-  const run = adapter.run({
-    session: running,
-    prompt: text,
-    onEvent: ({ type, data, raw }) => emit(bus, type, running, data, raw),
-    onText: (delta) => {
-      if (!delta) return;
-      textWrite = textWrite.then(async () => {
-        assistantMessage = appendTextToMessage(assistantMessage, delta);
-        await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
-        emit(
-          bus,
-          'message.delta',
-          running,
-          {
-            messageId: assistantMessage.id,
-            partId,
-            field: 'text',
-            delta,
-          },
-          { delta },
-        );
+  if (canRunNative) {
+    try {
+      run = await adapter.runNative({
+        session: running,
+        prompt: text,
+        parts,
+        onEvent: ({ type, data, raw }) => emit(bus, type, running, data, raw),
+        onExit: handleExit,
       });
-      return textWrite;
-    },
-    onAgentSessionId: async (agentSessionId, raw) => {
-      if (agentSessionId && agentSessionId !== session.agentSessionId) {
-        session.agentSessionId = agentSessionId;
-        await store.updateSession(session.id, {
-          agentSessionId,
-          raw: { agentSession: raw },
+    } catch (error) {
+      emit(
+        bus,
+        'command.updated',
+        running,
+        {
+          source: running.agentId,
+          eventType: 'native-fallback',
+          error: error.message,
+        },
+        { error: error.message },
+      );
+      run = null;
+    }
+  }
+
+  if (!run) {
+    const userMessage = createTextMessage({
+      sessionId: session.id,
+      role: 'user',
+      text,
+    });
+    await store.appendMessage(session.id, userMessage);
+    emit(bus, 'message.created', session, { message: userMessage }, userMessage);
+
+    assistantMessage = createTextMessage({
+      sessionId: session.id,
+      role: 'assistant',
+      text: '',
+      status: 'running',
+      modelId: session.modelId,
+    });
+    await store.appendMessage(session.id, assistantMessage);
+    emit(bus, 'message.created', session, { message: assistantMessage }, assistantMessage);
+    partId = assistantMessage.parts[0].id;
+
+    run = adapter.run({
+      session: running,
+      prompt: text,
+      onEvent: ({ type, data, raw }) => emit(bus, type, running, data, raw),
+      onText: (delta) => {
+        if (!delta) return;
+        textWrite = textWrite.then(async () => {
+          assistantMessage = appendTextToMessage(assistantMessage, delta);
+          await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
+          emit(
+            bus,
+            'message.delta',
+            running,
+            {
+              messageId: assistantMessage.id,
+              partId,
+              field: 'text',
+              delta,
+            },
+            { delta },
+          );
         });
-      }
+        return textWrite;
+      },
+      onAgentSessionId: async (agentSessionId, raw) => {
+        if (agentSessionId && agentSessionId !== session.agentSessionId) {
+          session.agentSessionId = agentSessionId;
+          await store.updateSession(session.id, {
+            agentSessionId,
+            raw: { agentSession: raw },
+          });
+        }
+      },
+      onExit: handleExit,
+    });
+  }
+
+  activeRuns.set(session.id, {
+    ...run,
+    abort() {
+      aborted = true;
+      run.abort();
     },
-    onExit: async ({ exitCode, error }) => {
-      activeRuns.delete(session.id);
-      await textWrite;
-      const finalStatus = exitCode === 0 ? 'completed' : 'error';
+  });
+
+  async function handleExit({ exitCode, error }) {
+    activeRuns.delete(session.id);
+    await textWrite;
+    if (assistantMessage) {
+      const finalStatus = exitCode === 0 || aborted ? 'completed' : 'error';
       assistantMessage = completeMessage(assistantMessage, finalStatus);
       await store.updateMessage(session.id, assistantMessage.id, () => assistantMessage);
-      emit(bus, 'message.completed', running, { message: assistantMessage }, assistantMessage);
+    }
+    emit(
+      bus,
+      'message.completed',
+      running,
+      assistantMessage ? { message: assistantMessage } : {},
+      assistantMessage || {},
+    );
 
-      const updated = await store.updateSession(session.id, {
-        status: exitCode === 0 ? 'idle' : 'error',
-        raw: {
-          lastExitCode: exitCode,
-          lastError: error || null,
-        },
-      });
-      if (exitCode === 0) {
-        emit(bus, 'session.completed', updated, { session: updated });
-      } else {
-        emit(
-          bus,
-          'session.error',
-          updated,
-          { error: error || `agent exited with code ${exitCode}` },
-          { exitCode, error },
-        );
-      }
-      emit(bus, 'session.updated', updated, { session: updated });
-    },
-  });
-  activeRuns.set(session.id, run);
+    const updated = await store.updateSession(session.id, {
+      status: exitCode === 0 || aborted ? 'idle' : 'error',
+      raw: {
+        lastExitCode: exitCode,
+        lastError: error || null,
+        lastAborted: aborted || null,
+      },
+    });
+    if (!updated) return;
+    if (!aborted && exitCode === 0) {
+      emit(bus, 'session.completed', updated, { session: updated });
+    } else if (!aborted) {
+      emit(
+        bus,
+        'session.error',
+        updated,
+        { error: error || `agent exited with code ${exitCode}` },
+        { exitCode, error },
+      );
+    }
+    emit(bus, 'session.updated', updated, { session: updated });
+  }
 }
 
 function emit(bus, type, session, data = {}, raw = {}) {

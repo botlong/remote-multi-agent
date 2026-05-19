@@ -104,7 +104,7 @@ class JsonStore {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
-  async createSession({ project, agentId, modelId, title }) {
+  async createSession({ project, agentId, modelId, title, agentSessionId, raw }) {
     const now = Date.now();
     const session = {
       id: crypto.randomUUID(),
@@ -116,8 +116,8 @@ class JsonStore {
       status: 'idle',
       createdAt: now,
       updatedAt: now,
-      agentSessionId: null,
-      raw: {},
+      agentSessionId: agentSessionId || null,
+      raw: raw && typeof raw === 'object' ? raw : {},
     };
     this.data.sessions.push(session);
     this.data.messagesBySession[session.id] = [];

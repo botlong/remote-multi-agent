@@ -12,6 +12,17 @@ const dataFile =
 
 async function main() {
   const server = await createGatewayServer({ dataFile });
+  let closing = false;
+  const shutdown = () => {
+    if (closing) return;
+    closing = true;
+    server.closeAllRuns?.();
+    server.close(() => {
+      process.exitCode = 0;
+    });
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
   server.listen(port, host, () => {
     const address = server.address();
     const actualPort =

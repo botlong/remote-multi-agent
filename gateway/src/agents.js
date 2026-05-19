@@ -14,6 +14,7 @@ const {
   runCapture,
   spawnCli,
 } = require('./cli');
+const { OpenCodeServerManager } = require('./opencode_server');
 
 const CODEX_COMMANDS = [
   '/permissions',
@@ -103,11 +104,13 @@ const OPENCODE_COMMANDS = [
 ];
 
 class AgentRegistry {
-  constructor() {
+  constructor({ openCodeServer } = {}) {
     this.adapters = new Map(
-      [new CodexAdapter(), new ClaudeCodeAdapter(), new OpenCodeAdapter()].map(
-        (adapter) => [adapter.id, adapter],
-      ),
+      [
+        new CodexAdapter(),
+        new ClaudeCodeAdapter(),
+        new OpenCodeAdapter({ server: openCodeServer }),
+      ].map((adapter) => [adapter.id, adapter]),
     );
   }
 
@@ -119,6 +122,12 @@ class AgentRegistry {
     return Promise.all(
       [...this.adapters.values()].map((adapter) => adapter.metadata(projectDirectory)),
     );
+  }
+
+  close() {
+    for (const adapter of this.adapters.values()) {
+      adapter.close?.();
+    }
   }
 }
 
@@ -280,10 +289,11 @@ class ClaudeCodeAdapter {
 }
 
 class OpenCodeAdapter {
-  constructor() {
+  constructor({ command, server } = {}) {
     this.id = 'opencode';
     this.displayName = 'OpenCode';
-    this.command = resolveOpenCodeCommand();
+    this.command = command || resolveOpenCodeCommand();
+    this.server = server || new OpenCodeServerManager({ command: this.command });
   }
 
   async metadata(projectDirectory) {
@@ -297,14 +307,22 @@ class OpenCodeAdapter {
       sessionKind: 'session',
       commands: await this.commands(projectDirectory),
       raw: {
-        available: commandExists(this.command),
+        available: commandExists(this.command) || Boolean(this.server.externalBaseUrl),
         command: publicCommand(this.command),
+        serverUrl: this.server.baseUrl || this.server.externalBaseUrl || null,
         projectDirectory,
       },
     };
   }
 
   async models() {
+    try {
+      const providers = await this.server.request('/provider');
+      const models = providerModels(providers);
+      if (models.length > 0) return models;
+    } catch (_) {
+      // Fall back to the CLI's static model list when server mode is unavailable.
+    }
     const result = await runCapture(this.command, ['models']);
     if (result.exitCode === 0) {
       return result.stdout
@@ -324,6 +342,122 @@ class OpenCodeAdapter {
     ]);
   }
 
+  async createSession({ project, title }) {
+    const query = project?.directory
+      ? `?directory=${encodeURIComponent(project.directory)}`
+      : '';
+    const raw = await this.server.request(`/session${query}`, {
+      method: 'POST',
+      body: {},
+    });
+    const agentSessionId = raw && typeof raw.id === 'string' ? raw.id : null;
+    if (!agentSessionId) throw new Error('OpenCode did not return a session id');
+    return {
+      agentSessionId,
+      title:
+        typeof raw.title === 'string' && raw.title.trim()
+          ? raw.title
+          : title || 'OpenCode session',
+      raw,
+    };
+  }
+
+  async listMessages(session) {
+    if (!session.agentSessionId) return null;
+    return await this.server.request(
+      `/session/${encodeURIComponent(session.agentSessionId)}/message`,
+    );
+  }
+
+  async abort(session) {
+    if (!session.agentSessionId) return false;
+    await this.server.request(
+      `/session/${encodeURIComponent(session.agentSessionId)}/abort`,
+      { method: 'POST' },
+    );
+    return true;
+  }
+
+  async deleteSession(session) {
+    if (!session.agentSessionId) return false;
+    await this.server.request(
+      `/session/${encodeURIComponent(session.agentSessionId)}`,
+      { method: 'DELETE' },
+    );
+    return true;
+  }
+
+  async runNative({ session, prompt, parts = [], onEvent, onExit }) {
+    if (!session.agentSessionId) return null;
+
+    const abortController = new AbortController();
+    let settled = false;
+    let sent = false;
+    let completionTimer = null;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(completionTimer);
+      abortController.abort();
+      onExit(result);
+    };
+    const markCompletedSoon = (result = { exitCode: 0 }) => {
+      clearTimeout(completionTimer);
+      completionTimer = setTimeout(() => finish(result), 250);
+    };
+
+    const stream = this.server.openEventStream({
+      signal: abortController.signal,
+      onEvent: (raw, eventName) => {
+        const event = normalizeOpenCodeEvent(raw, eventName);
+        if (!event) return;
+        const remoteSessionId = openCodeEventSessionId(raw);
+        if (remoteSessionId && remoteSessionId !== session.agentSessionId) return;
+        onEvent(event);
+        const terminal = openCodeTerminalResult(raw);
+        if (terminal) markCompletedSoon(terminal);
+      },
+    });
+    await stream.opened;
+
+    const { providerId, modelId } = splitOpenCodeModel(session.modelId);
+    const messageParts = [
+      ...(prompt.trim() ? [{ type: 'text', text: prompt }] : []),
+      ...parts.filter((part) => part && typeof part === 'object'),
+    ];
+    sent = true;
+    this.server
+      .request(`/session/${encodeURIComponent(session.agentSessionId)}/message`, {
+        method: 'POST',
+        body: {
+          providerID: providerId,
+          modelID: modelId,
+          mode: process.env.OPENCODE_MODE || 'build',
+          parts: messageParts,
+        },
+        signal: abortController.signal,
+      })
+      .then(() => {})
+      .catch((error) => {
+        if (!abortController.signal.aborted) {
+          finish({ exitCode: -1, error: error.message });
+        }
+      });
+    stream.done.catch((error) => {
+      if (!abortController.signal.aborted && sent) {
+        finish({ exitCode: -1, error: error.message });
+      }
+    });
+
+    return {
+      pid: null,
+      abort: () => {
+        this.abort(session).catch(() => {});
+        finish({ exitCode: -1, error: 'aborted' });
+      },
+    };
+  }
+
   run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
     const args = ['run', '--format', 'json', '--dir', session.directory];
     if (session.modelId) args.push('--model', session.modelId);
@@ -341,6 +475,172 @@ class OpenCodeAdapter {
       onExit,
     });
   }
+
+  close() {
+    this.server.close?.();
+  }
+}
+
+function providerModels(payload) {
+  const all = Array.isArray(payload?.all) ? payload.all : [];
+  const out = [];
+  for (const provider of all) {
+    if (!provider || typeof provider !== 'object') continue;
+    const providerId = provider.id || provider.providerID;
+    if (!providerId) continue;
+    const providerName = provider.name || providerId;
+    const models = provider.models || {};
+    for (const [modelId, model] of Object.entries(models)) {
+      out.push({
+        id: `${providerId}/${modelId}`,
+        displayName: `${providerName} / ${model?.name || modelId}`,
+        raw: compactOpenCodeModel(providerId, modelId, model),
+      });
+    }
+  }
+  return out;
+}
+
+function compactOpenCodeModel(providerId, modelId, model) {
+  return {
+    providerID: providerId,
+    modelID: modelId,
+    name: model?.name,
+    toolCall: model?.tool_call,
+    attachment: model?.attachment,
+    reasoning: model?.reasoning,
+    limit: model?.limit,
+  };
+}
+
+function splitOpenCodeModel(value) {
+  const fallback = process.env.OPENCODE_DEFAULT_MODEL || 'opencode/big-pickle';
+  const text = String(value || fallback);
+  const slash = text.indexOf('/');
+  if (slash === -1) {
+    return {
+      providerId: process.env.OPENCODE_DEFAULT_PROVIDER || 'opencode',
+      modelId: text,
+    };
+  }
+  return {
+    providerId: text.slice(0, slash),
+    modelId: text.slice(slash + 1),
+  };
+}
+
+function normalizeOpenCodeEvent(raw, eventName = 'message') {
+  if (!raw || typeof raw !== 'object') return null;
+  const type = raw.type || eventName;
+  const properties = raw.properties || raw.data || {};
+  switch (type) {
+    case 'message.updated': {
+      const info = properties.info || raw.info || raw.message || null;
+      return {
+        type,
+        data: info ? { info } : properties,
+        raw,
+      };
+    }
+    case 'message.part.updated': {
+      const part = properties.part || raw.part || null;
+      return {
+        type,
+        data: part ? { part } : properties,
+        raw,
+      };
+    }
+    case 'message.part.delta':
+      return {
+        type,
+        data: {
+          sessionID: properties.sessionID || raw.sessionID,
+          messageID: properties.messageID || raw.messageID,
+          partID: properties.partID || raw.partID,
+          field: properties.field || raw.field || 'text',
+          delta: properties.delta ?? raw.delta ?? '',
+        },
+        raw,
+      };
+    case 'session.updated':
+      return {
+        type: 'status.updated',
+        data: {
+          status: 'running',
+          source: 'opencode',
+          eventType: type,
+          session: properties.info || properties.session || raw.session || properties,
+        },
+        raw,
+      };
+    case 'session.error':
+      return {
+        type,
+        data: { error: openCodeErrorMessage(raw) },
+        raw,
+      };
+    case 'session.idle':
+      return {
+        type: 'status.updated',
+        data: {
+          status: 'idle',
+          source: 'opencode',
+          eventType: type,
+          session: properties.info || properties.session || raw.session || properties,
+        },
+        raw,
+      };
+    default:
+      return {
+        type: 'command.updated',
+        data: { source: 'opencode', eventType: type, properties },
+        raw,
+      };
+  }
+}
+
+function openCodeEventSessionId(raw) {
+  const properties = raw.properties || raw.data || {};
+  return (
+    properties.sessionID ||
+    raw.sessionID ||
+    properties.sessionId ||
+    raw.sessionId ||
+    properties.session?.id ||
+    raw.session?.id ||
+    properties.info?.sessionID ||
+    raw.info?.sessionID ||
+    raw.message?.sessionID ||
+    properties.part?.sessionID ||
+    raw.part?.sessionID ||
+    (String(raw.type || '').startsWith('session.') ? properties.info?.id : null) ||
+    null
+  );
+}
+
+function openCodeTerminalResult(raw) {
+  const type = raw?.type;
+  const properties = raw?.properties || raw?.data || {};
+  const info = properties.info || raw?.info || raw?.message || {};
+  if (type === 'session.error') {
+    return { exitCode: -1, error: openCodeErrorMessage(raw) };
+  }
+  if (info.status === 'error') {
+    return { exitCode: -1, error: openCodeErrorMessage(raw) };
+  }
+  if (type === 'session.idle' || type === 'session.completed') {
+    return { exitCode: 0 };
+  }
+  if (info.role === 'assistant' && info.status === 'completed') {
+    return { exitCode: 0 };
+  }
+  return null;
+}
+
+function openCodeErrorMessage(raw) {
+  const properties = raw?.properties || raw?.data || {};
+  const error = properties.error || raw?.error || {};
+  return error.message || raw?.message || 'OpenCode error';
 }
 
 function runJsonCli({
@@ -581,4 +881,6 @@ function compactCodexModel(model) {
 
 module.exports = {
   AgentRegistry,
+  OpenCodeAdapter,
+  normalizeOpenCodeEvent,
 };
