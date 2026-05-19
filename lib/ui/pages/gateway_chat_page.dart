@@ -153,6 +153,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
                 );
               },
             ),
+          if (chatState.usage != null) _UsageBar(usage: chatState.usage!),
           _InputBar(
             controller: _input,
             focusNode: _focus,
@@ -441,6 +442,58 @@ class _EmptyChat extends StatelessWidget {
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium,
         ),
+      ),
+    );
+  }
+}
+
+class _UsageBar extends StatelessWidget {
+  const _UsageBar({required this.usage});
+  final TokenUsage usage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ratio = usage.ratio.clamp(0.0, 1.0);
+    final isHigh = ratio > 0.8;
+    final color = isHigh ? theme.colorScheme.error : theme.colorScheme.primary;
+    final totalK = (usage.totalTokens / 1000).toStringAsFixed(1);
+    final limitK = (TokenUsage.contextLimit / 1000).toStringAsFixed(0);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.data_usage, size: 14, color: color),
+              const SizedBox(width: 6),
+              Text(
+                '${totalK}k / ${limitK}k tokens',
+                style: theme.textTheme.labelSmall?.copyWith(color: color),
+              ),
+              const Spacer(),
+              if (isHigh)
+                Text(
+                  'Consider /compact',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 3,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation(color),
+            ),
+          ),
+        ],
       ),
     );
   }

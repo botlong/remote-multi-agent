@@ -16,6 +16,22 @@ import 'notification_service.dart';
 enum GatewayChatConnectionState { connecting, connected, disconnected }
 
 @immutable
+class TokenUsage {
+  const TokenUsage({
+    this.inputTokens = 0,
+    this.outputTokens = 0,
+    this.totalTokens = 0,
+  });
+
+  final int inputTokens;
+  final int outputTokens;
+  final int totalTokens;
+
+  double get ratio => totalTokens > 0 ? totalTokens / contextLimit : 0;
+  static const int contextLimit = 128000;
+}
+
+@immutable
 class GatewayChatState {
   const GatewayChatState({
     required this.sessionId,
@@ -24,6 +40,7 @@ class GatewayChatState {
     required this.isStreaming,
     required this.connection,
     this.error,
+    this.usage,
   });
 
   final String sessionId;
@@ -32,6 +49,7 @@ class GatewayChatState {
   final bool isStreaming;
   final GatewayChatConnectionState connection;
   final String? error;
+  final TokenUsage? usage;
 
   String get sessionTitle => session?.title ?? '';
   Iterable<Message> get orderedMessages => messages.values;
@@ -53,6 +71,7 @@ class GatewayChatState {
     GatewayChatConnectionState? connection,
     String? error,
     bool clearError = false,
+    TokenUsage? usage,
   }) =>
       GatewayChatState(
         sessionId: sessionId ?? this.sessionId,
@@ -61,6 +80,7 @@ class GatewayChatState {
         isStreaming: isStreaming ?? this.isStreaming,
         connection: connection ?? this.connection,
         error: clearError ? null : (error ?? this.error),
+        usage: usage ?? this.usage,
       );
 }
 
@@ -195,6 +215,17 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
           title: 'Agent error',
           body: errMsg,
         );
+      case 'session.usage':
+        final u = event.data['usage'] as Map<String, dynamic>?;
+        if (u != null) {
+          state = state.copyWith(
+            usage: TokenUsage(
+              inputTokens: (u['inputTokens'] as num?)?.toInt() ?? 0,
+              outputTokens: (u['outputTokens'] as num?)?.toInt() ?? 0,
+              totalTokens: (u['totalTokens'] as num?)?.toInt() ?? 0,
+            ),
+          );
+        }
       case 'status.updated':
         state = state.copyWith(
           isStreaming: event.data['status']?.toString() == 'running',

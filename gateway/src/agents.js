@@ -681,6 +681,7 @@ function runJsonCli({
   onEvent,
   onText,
   onToolCall,
+  onUsage,
   onAgentSessionId,
   onExit,
 }) {
@@ -724,6 +725,10 @@ function runJsonCli({
     if (onToolCall) {
       const toolCall = extractToolCall(raw);
       if (toolCall) onToolCall(toolCall);
+    }
+    if (onUsage) {
+      const usage = extractUsage(raw);
+      if (usage) onUsage(usage);
     }
   });
   readLines(child.stderr, (line) => {
@@ -900,6 +905,36 @@ function extractToolCall(raw) {
         };
       }
     }
+  }
+  return null;
+}
+
+/**
+ * Extract token usage info from agent JSON events.
+ * Returns { inputTokens, outputTokens, totalTokens } or null.
+ */
+function extractUsage(raw) {
+  // OpenAI / Codex: { usage: { input_tokens, output_tokens, total_tokens } }
+  const usage = raw.usage || raw.token_usage;
+  if (usage && typeof usage === 'object') {
+    const input = usage.input_tokens || usage.prompt_tokens || 0;
+    const output = usage.output_tokens || usage.completion_tokens || 0;
+    const total = usage.total_tokens || input + output;
+    if (total > 0) return { inputTokens: input, outputTokens: output, totalTokens: total };
+  }
+  // Claude: { message: { usage: ... } }
+  if (raw.message?.usage) {
+    const u = raw.message.usage;
+    const input = u.input_tokens || 0;
+    const output = u.output_tokens || 0;
+    return { inputTokens: input, outputTokens: output, totalTokens: input + output };
+  }
+  // response.completed with usage at top level
+  if (raw.type === 'response.completed' && raw.response?.usage) {
+    const u = raw.response.usage;
+    const input = u.input_tokens || u.prompt_tokens || 0;
+    const output = u.output_tokens || u.completion_tokens || 0;
+    return { inputTokens: input, outputTokens: output, totalTokens: input + output };
   }
   return null;
 }

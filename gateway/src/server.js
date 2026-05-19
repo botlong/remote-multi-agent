@@ -440,6 +440,9 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
         });
         return textWrite;
       },
+      onUsage: (usage) => {
+        emit(bus, 'session.usage', running, { usage }, usage);
+      },
       onAgentSessionId: async (agentSessionId, raw) => {
         if (agentSessionId && agentSessionId !== session.agentSessionId) {
           session.agentSessionId = agentSessionId;
