@@ -256,6 +256,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     );
   }
 
+
   String _statusFromState(dynamic state) {
     if (state.isStreaming == true) return 'running';
     final session = state.session;
@@ -316,7 +317,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
         await notifier.sendMessage(
           text,
           attachments: pendingAttachments.isEmpty
-              ? null
+              ? const []
               : pendingAttachments.map((a) => a.toPartJson()).toList(),
         );
       }
