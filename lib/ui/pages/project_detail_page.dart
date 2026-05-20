@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -8,6 +9,7 @@ import '../widgets/session_status_chip.dart';
 import 'agent_group_page.dart';
 import 'gateway_chat_page.dart';
 import 'gateway_ui_adapters.dart';
+import 'search_page.dart';
 
 class ProjectDetailPage extends ConsumerWidget {
   const ProjectDetailPage({
@@ -26,21 +28,43 @@ class ProjectDetailPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(project.name),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(28),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                project.directory,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search in project',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => SearchPage(projectId: project.id),
               ),
+            ),
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(32),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.folder_outlined,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    project.directory,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -79,19 +103,36 @@ class _SessionGroups extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (grouped.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
       return ListView(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 80),
         children: [
-          Icon(
-            Icons.chat_bubble_outline,
-            size: 48,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer.withValues(alpha: 0.3),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.chat_bubble_outline,
+              size: 32,
+              color: scheme.primary,
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           Text(
-            'No conversations in this project.',
+            'No conversations yet',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Start a new conversation with\nany of your coding agents.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
           ),
         ],
       );
@@ -166,24 +207,47 @@ class _ModelSection extends ConsumerWidget {
       title: Text(modelId == '_default' ? 'Default model' : modelId),
       children: [
         for (final session in sessions)
-          ListTile(
-            contentPadding: const EdgeInsets.only(left: 8, right: 0),
-            title: Text(
-              session.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          Dismissible(
+            key: ValueKey(session.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              color: Theme.of(context).colorScheme.error,
+              child: const Icon(Icons.delete, color: Colors.white),
             ),
-            subtitle: Text(_relativeTime(session.updatedAtMs)),
-            trailing: SessionStatusChip(status: session.status, compact: true),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => GatewayChatPage(
-                  session: session,
-                  project: project,
+            confirmDismiss: (_) => _confirmSwipeDelete(context),
+            onDismissed: (_) => ref
+                .read(gatewaySessionStoreProvider(project.id).notifier)
+                .deleteSession(session.id),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              title: Text(
+                session.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  _relativeTime(session.updatedAtMs),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ),
+              trailing: SessionStatusChip(status: session.status, compact: true),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => GatewayChatPage(
+                    session: session,
+                    project: project,
+                  ),
+                ),
+              ),
+              onLongPress: () => _showSessionMenu(context, ref, session),
             ),
-            onLongPress: () => _showSessionMenu(context, ref, session),
           ),
       ],
     );
@@ -206,6 +270,29 @@ class _ModelSection extends ConsumerWidget {
               onTap: () {
                 Navigator.pop(ctx);
                 _showRenameDialog(context, ref, session);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share),
+              title: const Text('Export as Markdown'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                try {
+                  final client = ref.read(gatewayClientProvider);
+                  final md = await client.exportSession(session.id);
+                  await Clipboard.setData(ClipboardData(text: md));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Markdown copied')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Export failed: $e')),
+                    );
+                  }
+                }
               },
             ),
             ListTile(
@@ -269,6 +356,29 @@ class _ModelSection extends ConsumerWidget {
               }
             },
             child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _confirmSwipeDelete(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete session?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
           ),
         ],
       ),

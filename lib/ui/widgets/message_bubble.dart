@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/message.dart';
 import '../../models/part.dart';
@@ -9,8 +10,13 @@ import 'parts/text_part_view.dart';
 import 'parts/tool_part_view.dart';
 
 class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    this.onDelete,
+  });
   final Message message;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -26,55 +32,142 @@ class MessageBubble extends StatelessWidget {
       partWidgets.add(const _TypingIndicator());
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isUser) const _RoleAvatar(role: MessageRole.assistant),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final w in partWidgets) ...[
-                        w,
-                        // No spacer below empty step parts
-                        if (w is! StepPartView) const SizedBox(height: 4),
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onLongPress: () => _showContextMenu(context),
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: 4,
+          bottom: 4,
+          left: isUser ? 40 : 0,
+          right: isUser ? 0 : 40,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isUser) ...[
+              const _RoleAvatar(role: MessageRole.assistant),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                    isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isUser
+                          ? scheme.primaryContainer.withValues(alpha: 0.7)
+                          : scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(isUser ? 18 : 4),
+                        bottomRight: Radius.circular(isUser ? 4 : 18),
+                      ),
+                      border: isUser
+                          ? null
+                          : Border.all(
+                              color: scheme.outlineVariant.withValues(alpha: 0.15),
+                            ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final w in partWidgets) ...[
+                          w,
+                          if (w is! StepPartView) const SizedBox(height: 4),
+                        ],
                       ],
-                    ],
-                  ),
-                ),
-                if (message.modelId != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                    child: Text(
-                      message.modelId!,
-                      style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ),
-              ],
+                  if (message.modelId != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3, left: 6, right: 6),
+                      child: Text(
+                        message.modelId!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                              fontSize: 10,
+                            ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            const _RoleAvatar(role: MessageRole.user),
+            if (isUser) ...[
+              const SizedBox(width: 8),
+              const _RoleAvatar(role: MessageRole.user),
+            ],
           ],
-        ],
+        ),
+      ),
+    );
+  }
+
+  String _plainText() {
+    final buf = StringBuffer();
+    for (final part in message.orderedParts) {
+      switch (part) {
+        case TextPart():
+          buf.writeln(part.text);
+        case ReasoningPart():
+          buf.writeln(part.text);
+        case ToolPart():
+          buf.writeln('[${part.tool}] ${part.input ?? ""}');
+          if (part.output != null) buf.writeln(part.output);
+        default:
+          break;
+      }
+    }
+    return buf.toString().trim();
+  }
+
+  void _showContextMenu(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy text'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: _plainText()));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Copied'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
+            if (onDelete != null)
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  'Delete message',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onDelete!();
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -99,13 +192,19 @@ class _RoleAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isUser = role == MessageRole.user;
-    return CircleAvatar(
-      radius: 14,
-      backgroundColor: isUser ? scheme.primary : scheme.tertiary,
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: isUser
+            ? scheme.primary.withValues(alpha: 0.1)
+            : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Icon(
-        isUser ? Icons.person_outline : Icons.smart_toy_outlined,
-        size: 16,
-        color: isUser ? scheme.onPrimary : scheme.onTertiary,
+        isUser ? Icons.person : Icons.auto_awesome,
+        size: 14,
+        color: isUser ? scheme.primary : scheme.onSurfaceVariant,
       ),
     );
   }
@@ -115,13 +214,80 @@ class _TypingIndicator extends StatelessWidget {
   const _TypingIndicator();
 
   @override
-  Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 6),
-        child: SizedBox(
-          width: 32,
-          child: LinearProgressIndicator(minHeight: 2),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(width: 5),
+            _Dot(
+              delay: Duration(milliseconds: i * 180),
+              color: scheme.primary.withValues(alpha: 0.7),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Dot extends StatefulWidget {
+  const _Dot({required this.delay, required this.color});
+  final Duration delay;
+  final Color color;
+
+  @override
+  State<_Dot> createState() => _DotState();
+}
+
+class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _anim = Tween(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+    Future.delayed(widget.delay, () {
+      if (mounted) _ctrl.repeat(reverse: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Transform.translate(
+        offset: Offset(0, -2 * _anim.value),
+        child: Opacity(
+          opacity: 0.35 + 0.65 * _anim.value,
+          child: Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: widget.color,
+              shape: BoxShape.circle,
+            ),
+          ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// Renders a file attachment as a compact card.

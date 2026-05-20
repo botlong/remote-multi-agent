@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../state/notification_service.dart';
 import '../state/settings_store.dart';
 import '../theme.dart';
 import 'pages/home_page.dart';
@@ -13,10 +14,14 @@ class OpencodeMobileApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final prefs = ref.watch(sharedPreferencesProvider);
     return MaterialApp(
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
       title: 'OpenCode Mobile',
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),
-      themeMode: ThemeMode.system,
+      themeMode: prefs.maybeWhen(
+        data: (_) => ref.watch(settingsControllerProvider).themeMode,
+        orElse: () => ThemeMode.system,
+      ),
       home: prefs.when(
         loading: () => const _SplashScreen(),
         error: (e, _) => _ErrorScreen(error: e),

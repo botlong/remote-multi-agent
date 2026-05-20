@@ -7,6 +7,7 @@ import '../../state/settings_store.dart';
 import '../widgets/directory_picker.dart';
 import 'gateway_ui_adapters.dart';
 import 'project_detail_page.dart';
+import 'search_page.dart';
 
 class ProjectListPage extends ConsumerWidget {
   const ProjectListPage({super.key});
@@ -23,6 +24,14 @@ class ProjectListPage extends ConsumerWidget {
         title: const Text('Projects'),
         automaticallyImplyLeading: false,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search messages',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh projects',
@@ -95,74 +104,189 @@ class _ProjectListBody extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
     if (error != null && projects.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          Text(
-            'Projects unavailable',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ],
-      );
+      return _ErrorEmpty(error: error!);
     }
     if (projects.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.all(32),
-        children: [
-          Icon(
-            Icons.folder_open,
-            size: 48,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'No projects yet.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ],
-      );
+      return const _ProjectsEmpty();
     }
-    return ListView.separated(
-      padding: const EdgeInsets.only(bottom: 88),
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       itemCount: projects.length,
-      separatorBuilder: (_, __) => const Divider(height: 0),
-      itemBuilder: (context, index) => _ProjectTile(project: projects[index]),
+      itemBuilder: (context, index) => _ProjectCard(project: projects[index]),
     );
   }
 }
 
-class _ProjectTile extends StatelessWidget {
-  const _ProjectTile({required this.project});
+class _ProjectsEmpty extends StatelessWidget {
+  const _ProjectsEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 120),
+      children: [
+        Icon(
+          Icons.folder_outlined,
+          size: 48,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'No projects yet',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Add a project directory to get started.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ErrorEmpty extends StatelessWidget {
+  const _ErrorEmpty({required this.error});
+  final String error;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 80),
+      children: [
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: scheme.errorContainer.withValues(alpha: 0.3),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.cloud_off, size: 36, color: scheme.error),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'Connection failed',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          error,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.error,
+              ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Pull to retry, or check Settings.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProjectCard extends StatelessWidget {
+  const _ProjectCard({required this.project});
 
   final GatewayProjectView project;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-        child: const Icon(Icons.folder_outlined),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openProject(context, project),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.folder_outlined,
+                    color: scheme.onSurfaceVariant,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        project.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        project.directory,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _relativeTime(project.updatedAtMs),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      title: Text(
-        project.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        '${project.directory}\n${_relativeTime(project.updatedAtMs)}',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      isThreeLine: true,
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => _openProject(context, project),
     );
   }
 }

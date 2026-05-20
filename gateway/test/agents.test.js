@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { buildCodexArgs } = require('../src/agents');
+const { buildCodexArgs, runJsonCli } = require('../src/agents');
 
 test('Codex new sessions skip git repository checks', () => {
   const args = buildCodexArgs({
@@ -31,4 +31,44 @@ test('Codex resumed sessions skip git repository checks', () => {
     '--skip-git-repo-check',
   ]);
   assert.deepEqual(args.slice(-4), ['--model', 'gpt-5.5', 'session-123', '-']);
+});
+
+test('runJsonCli closes stdin by default so one-shot CLIs see EOF', async () => {
+  // Script that exits with code 0 only if stdin sees EOF, else hangs.
+  const script =
+    'process.stdin.resume();' +
+    'process.stdin.on("end",()=>{console.log(JSON.stringify({type:"done"}));process.exit(0)});' +
+    'setTimeout(()=>process.exit(1),1500);';
+  const result = await new Promise((resolve) => {
+    runJsonCli({
+      command: { command: process.execPath },
+      args: ['-e', script],
+      cwd: process.cwd(),
+      stdin: null,
+      onEvent: () => {},
+      onText: () => {},
+      onExit: resolve,
+    });
+  });
+  assert.equal(result.exitCode, 0, `expected EOF-driven exit, got ${result.exitCode}`);
+});
+
+test('runJsonCli with keepStdinOpen keeps stdin writable after initial prompt', async () => {
+  // Script reads first line then exits cleanly.
+  const script =
+    'let buf="";process.stdin.on("data",(c)=>{buf+=c;if(buf.includes("\\n")){' +
+    'console.log(JSON.stringify({type:"got",line:buf.trim()}));process.exit(0)}});';
+  const result = await new Promise((resolve) => {
+    runJsonCli({
+      command: { command: process.execPath },
+      args: ['-e', script],
+      cwd: process.cwd(),
+      stdin: 'hello',
+      keepStdinOpen: true,
+      onEvent: () => {},
+      onText: () => {},
+      onExit: resolve,
+    });
+  });
+  assert.equal(result.exitCode, 0);
 });

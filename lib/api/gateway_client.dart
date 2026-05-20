@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +10,7 @@ import '../models/agent.dart';
 import '../models/gateway_event.dart';
 import '../models/gateway_session.dart';
 import '../models/project.dart';
+import 'sse_stream.dart';
 
 class GatewayClient {
   GatewayClient({
@@ -181,6 +181,43 @@ class GatewayClient {
     await _dio.delete<dynamic>('/sessions/${_path(sessionId)}');
   }
 
+  Future<List<Map<String, dynamic>>> search(
+    String query, {
+    String? projectId,
+  }) async {
+    final res = await _dio.get<List<dynamic>>(
+      '/search',
+      queryParameters: <String, dynamic>{
+        'q': query,
+        if (projectId != null) 'projectId': projectId,
+      },
+    );
+    return _readList(res.data);
+  }
+
+  /// Export session as markdown or JSON string.
+  Future<String> exportSession(String sessionId, {String format = 'markdown'}) async {
+    final res = await _dio.get<dynamic>(
+      '/sessions/${_path(sessionId)}/export',
+      queryParameters: {'format': format},
+      options: Options(responseType: ResponseType.plain),
+    );
+    return res.data?.toString() ?? '';
+  }
+
+  Future<Map<String, dynamic>> getSessionDiff(String sessionId) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/sessions/${_path(sessionId)}/diff',
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
+  Future<void> deleteMessage(String sessionId, String messageId) async {
+    await _dio.delete<dynamic>(
+      '/sessions/${_path(sessionId)}/messages/${_path(messageId)}',
+    );
+  }
+
   Future<List<Map<String, dynamic>>> listMessages(String sessionId) async {
     final res = await _dio.get<List<dynamic>>(
       '/sessions/${_path(sessionId)}/messages',
@@ -225,72 +262,62 @@ class GatewayClient {
   }
 
   Stream<GatewayEvent> events(String sessionId) {
-    final request = http.Request(
-      'GET',
-      Uri.parse('$_base/sessions/${_path(sessionId)}/events'),
-    );
-    request.headers['Accept'] = 'text/event-stream';
-    request.headers['Cache-Control'] = 'no-cache';
-    if (_bearerToken != null && _bearerToken.isNotEmpty) {
-      request.headers['Authorization'] = 'Bearer $_bearerToken';
-    }
-    return _sendSse(request);
-  }
+    // Use the self-reconnecting SseClient so that gateway restarts and
+    // brief network drops don't leave the chat permanently disconnected.
+    final controller = StreamController<GatewayEvent>();
+    SseClient? client;
+    StreamSubscription<SseEvent>? sub;
+    StreamSubscription<SseState>? stateSub;
+    bool everConnected = false;
 
-  Stream<GatewayEvent> _sendSse(http.BaseRequest request) async* {
-    final response = await _httpClient.send(request);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      await response.stream.drain<void>();
-      throw StateError('SSE handshake failed: HTTP ${response.statusCode}');
-    }
-
-    String? eventType;
-    final dataBuffer = StringBuffer();
-    await for (final line in response.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())) {
-      final normalized =
-          line.endsWith('\r') ? line.substring(0, line.length - 1) : line;
-      if (normalized.isEmpty) {
-        if (dataBuffer.isNotEmpty) {
-          yield GatewayEvent.fromSseData(
-            sseEvent: eventType ?? 'message',
-            data: dataBuffer.toString(),
-          );
-        }
-        eventType = null;
-        dataBuffer.clear();
-        continue;
-      }
-      if (normalized.startsWith(':')) continue;
-
-      final colon = normalized.indexOf(':');
-      final field = colon >= 0 ? normalized.substring(0, colon) : normalized;
-      final value = colon >= 0
-          ? (normalized.length > colon + 1 && normalized[colon + 1] == ' '
-              ? normalized.substring(colon + 2)
-              : normalized.substring(colon + 1))
-          : '';
-
-      switch (field) {
-        case 'event':
-          eventType = value;
-          break;
-        case 'data':
-          if (dataBuffer.isNotEmpty) dataBuffer.writeln();
-          dataBuffer.write(value);
-          break;
-        default:
-          break;
-      }
-    }
-
-    if (dataBuffer.isNotEmpty) {
-      yield GatewayEvent.fromSseData(
-        sseEvent: eventType ?? 'message',
-        data: dataBuffer.toString(),
+    controller.onListen = () {
+      client = SseClient(
+        SseConfig(
+          url: Uri.parse('$_base/sessions/${_path(sessionId)}/events'),
+          bearerToken: _bearerToken,
+        ),
       );
-    }
+      sub = client!.events.listen(
+        (sse) {
+          if (controller.isClosed) return;
+          controller.add(
+            GatewayEvent.fromJson(sse.data, sseEvent: sse.type),
+          );
+        },
+        onError: (Object error) {
+          if (!controller.isClosed) controller.addError(error);
+        },
+      );
+      // Watch state transitions so consumers can refetch after a reconnect
+      // (gateway restart, network blip). Synthesize a 'gateway.reconnected'
+      // event on every connect AFTER the first.
+      stateSub = client!.state.listen((s) {
+        if (controller.isClosed) return;
+        if (s == SseState.connected) {
+          if (everConnected) {
+            controller.add(
+              GatewayEvent.fromJson(
+                <String, dynamic>{
+                  'type': 'gateway.reconnected',
+                  'sessionId': sessionId,
+                  'data': <String, dynamic>{},
+                },
+                sseEvent: 'gateway',
+              ),
+            );
+          }
+          everConnected = true;
+        }
+      });
+    };
+
+    controller.onCancel = () async {
+      await sub?.cancel();
+      await stateSub?.cancel();
+      await client?.dispose();
+    };
+
+    return controller.stream;
   }
 
   void close() {

@@ -5,7 +5,7 @@
 /// user's own LAN/Tailscale, and the bearer token is just OPENCODE_SERVER_PASSWORD.
 library;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,12 +16,14 @@ class AppSettings {
     required this.bearerToken,
     required this.providerId,
     required this.modelId,
+    this.themeMode = ThemeMode.system,
   });
 
   final String baseUrl;
   final String bearerToken;
   final String providerId;
   final String modelId;
+  final ThemeMode themeMode;
 
   bool get isConfigured =>
       baseUrl.isNotEmpty && providerId.isNotEmpty && modelId.isNotEmpty;
@@ -31,12 +33,14 @@ class AppSettings {
     String? bearerToken,
     String? providerId,
     String? modelId,
+    ThemeMode? themeMode,
   }) =>
       AppSettings(
         baseUrl: baseUrl ?? this.baseUrl,
         bearerToken: bearerToken ?? this.bearerToken,
         providerId: providerId ?? this.providerId,
         modelId: modelId ?? this.modelId,
+        themeMode: themeMode ?? this.themeMode,
       );
 
   static const empty = AppSettings(
@@ -53,11 +57,15 @@ class SettingsController extends StateNotifier<AppSettings> {
   final SharedPreferences _prefs;
 
   static AppSettings _load(SharedPreferences p) {
+    final themeModeIndex = p.getInt(_kThemeMode);
     return AppSettings(
       baseUrl: p.getString(_kBaseUrl) ?? AppSettings.empty.baseUrl,
       bearerToken: p.getString(_kToken) ?? '',
       providerId: p.getString(_kProvider) ?? AppSettings.empty.providerId,
       modelId: p.getString(_kModel) ?? AppSettings.empty.modelId,
+      themeMode: themeModeIndex != null && themeModeIndex < ThemeMode.values.length
+          ? ThemeMode.values[themeModeIndex]
+          : ThemeMode.system,
     );
   }
 
@@ -68,6 +76,7 @@ class SettingsController extends StateNotifier<AppSettings> {
       _prefs.setString(_kToken, next.bearerToken),
       _prefs.setString(_kProvider, next.providerId),
       _prefs.setString(_kModel, next.modelId),
+      _prefs.setInt(_kThemeMode, next.themeMode.index),
     ]);
   }
 
@@ -75,6 +84,7 @@ class SettingsController extends StateNotifier<AppSettings> {
   static const _kToken = 'oc.bearerToken';
   static const _kProvider = 'oc.providerId';
   static const _kModel = 'oc.modelId';
+  static const _kThemeMode = 'oc.themeMode';
 }
 
 /// Top-level provider. The async dependency is solved with [FutureProvider],

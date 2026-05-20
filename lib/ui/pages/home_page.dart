@@ -20,8 +20,8 @@ class _HomePageState extends State<HomePage> {
 
   static const _destinations = <NavigationDestination>[
     NavigationDestination(
-      icon: Icon(Icons.folder_outlined),
-      selectedIcon: Icon(Icons.folder),
+      icon: Icon(Icons.workspaces_outlined),
+      selectedIcon: Icon(Icons.workspaces),
       label: 'Projects',
     ),
     NavigationDestination(
@@ -30,19 +30,20 @@ class _HomePageState extends State<HomePage> {
       label: 'Git',
     ),
     NavigationDestination(
-      icon: Icon(Icons.folder_outlined),
-      selectedIcon: Icon(Icons.folder),
+      icon: Icon(Icons.snippet_folder_outlined),
+      selectedIcon: Icon(Icons.snippet_folder),
       label: 'Files',
     ),
     NavigationDestination(
-      icon: Icon(Icons.settings_outlined),
-      selectedIcon: Icon(Icons.settings),
+      icon: Icon(Icons.tune_outlined),
+      selectedIcon: Icon(Icons.tune),
       label: 'Settings',
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
@@ -53,10 +54,20 @@ class _HomePageState extends State<HomePage> {
           SettingsPage(firstRun: false),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        destinations: _destinations,
+      bottomNavigationBar: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: scheme.outlineVariant.withValues(alpha: 0.2),
+            ),
+          ),
+        ),
+        child: NavigationBar(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: (i) => setState(() => _currentIndex = i),
+          destinations: _destinations,
+        ),
       ),
     );
   }

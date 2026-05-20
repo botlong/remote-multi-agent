@@ -71,6 +71,7 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
                   _selectedModel = null;
                   _modelLookupComplete = false;
                   _modelsFuture = _loadModels(agent.id);
+                  _selectedPermission = _defaultPermission(agent.id);
                 }),
               ),
           if (_selectedAgent != null) ...[
@@ -209,6 +210,15 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
     }
   }
 }
+
+/// Safe default for headless agent runs. Without this Claude blocks on
+/// interactive permission prompts in `-p` mode.
+String _defaultPermission(String agentId) => switch (agentId) {
+      'codex' => 'workspace-write',
+      'claude-code' => 'acceptEdits',
+      'opencode' => 'build',
+      _ => 'build',
+    };
 
 class _AgentOption extends StatelessWidget {
   const _AgentOption({
@@ -393,9 +403,10 @@ class _PermissionPicker extends StatelessWidget {
           _PermOption('locked', 'Locked', 'No file access'),
         ],
       'claude-code' => const [
-          _PermOption('default', 'Default', 'Ask for permissions as needed'),
+          _PermOption('acceptEdits', 'Accept Edits', 'Auto-accept edits (default)'),
           _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
           _PermOption('bypassPermissions', 'Full Auto', 'Skip all permission prompts'),
+          _PermOption('default', 'Ask', 'Prompt for each permission (interactive only)'),
         ],
       _ => const [
           _PermOption('build', 'Build', 'Standard build mode'),

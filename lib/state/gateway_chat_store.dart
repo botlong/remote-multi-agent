@@ -11,8 +11,25 @@ import '../models/gateway_session.dart';
 import '../models/message.dart';
 import '../models/part.dart';
 import 'gateway_client_provider.dart';
+import 'notification_service.dart';
 
 enum GatewayChatConnectionState { connecting, connected, disconnected }
+
+@immutable
+class TokenUsage {
+  const TokenUsage({
+    this.inputTokens = 0,
+    this.outputTokens = 0,
+    this.totalTokens = 0,
+  });
+
+  final int inputTokens;
+  final int outputTokens;
+  final int totalTokens;
+
+  double get ratio => totalTokens > 0 ? totalTokens / contextLimit : 0;
+  static const int contextLimit = 128000;
+}
 
 @immutable
 class GatewayChatState {
@@ -23,6 +40,7 @@ class GatewayChatState {
     required this.isStreaming,
     required this.connection,
     this.error,
+    this.usage,
   });
 
   final String sessionId;
@@ -31,7 +49,9 @@ class GatewayChatState {
   final bool isStreaming;
   final GatewayChatConnectionState connection;
   final String? error;
+  final TokenUsage? usage;
 
+  String get sessionTitle => session?.title ?? '';
   Iterable<Message> get orderedMessages => messages.values;
   List<Message> get items => messages.values.toList(growable: false);
 
@@ -51,6 +71,7 @@ class GatewayChatState {
     GatewayChatConnectionState? connection,
     String? error,
     bool clearError = false,
+    TokenUsage? usage,
   }) =>
       GatewayChatState(
         sessionId: sessionId ?? this.sessionId,
@@ -59,6 +80,7 @@ class GatewayChatState {
         isStreaming: isStreaming ?? this.isStreaming,
         connection: connection ?? this.connection,
         error: clearError ? null : (error ?? this.error),
+        usage: usage ?? this.usage,
       );
 }
 
@@ -79,18 +101,24 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     try {
       final session = await _client.getSession(state.sessionId);
       final rawMessages = await _client.listMessages(state.sessionId);
-      // Re-read state.messages after await — SSE events may have arrived.
+      // Merge REST snapshot with the LATEST state.messages — not the snapshot
+      // we took before the await — otherwise any SSE deltas that arrived
+      // mid-flight get clobbered.
       final next = Map<String, Message>.from(state.messages);
       for (final json in rawMessages) {
         final message = Message.fromJson(json);
-        if (message.id.isNotEmpty) {
-          final existing = next[message.id];
-          // Only use REST data if SSE hasn't already provided more parts.
-          if (existing == null ||
-              (message.parts.length > existing.parts.length)) {
-            next[message.id] = message;
-          }
+        if (message.id.isEmpty) continue;
+        final existing = next[message.id];
+        if (existing == null) {
+          next[message.id] = message;
+          continue;
         }
+        // Prefer richer SSE-built parts, but always accept REST metadata so a
+        // reconnect can move stale running messages to completed/error.
+        final parts = message.parts.length > existing.parts.length
+            ? message.parts
+            : existing.parts;
+        next[message.id] = message.copyWith(parts: parts);
       }
       state = state.copyWith(
         session: state.session ?? session,
@@ -116,6 +144,17 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
             state.copyWith(connection: GatewayChatConnectionState.disconnected);
       },
     );
+  }
+
+  /// Drop the current SSE subscription and create a new one. Call this when
+  /// the app resumes from background — the OS may have killed the underlying
+  /// socket without firing onDone, so we can't trust the existing stream.
+  Future<void> reconnect() async {
+    await _eventSub?.cancel();
+    _eventSub = null;
+    _bindEvents();
+    // Also re-pull state in case we missed events while backgrounded.
+    await _load();
   }
 
   Future<void> sendMessage(
@@ -145,6 +184,12 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     state = state.copyWith(isStreaming: false);
   }
 
+  Future<void> deleteMessage(String messageId) async {
+    await _client.deleteMessage(state.sessionId, messageId);
+    final next = Map<String, Message>.from(state.messages)..remove(messageId);
+    state = state.copyWith(messages: next);
+  }
+
   void _onEvent(GatewayEvent event) {
     if (state.connection != GatewayChatConnectionState.connected) {
       state = state.copyWith(connection: GatewayChatConnectionState.connected);
@@ -157,20 +202,52 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         _onPart(event.data);
       case 'message.delta':
         _onMessageDelta(event);
+      case 'message.deleted':
+        final messageId = event.data['messageId'] as String?;
+        if (messageId != null) {
+          final next = Map<String, Message>.from(state.messages)
+            ..remove(messageId);
+          state = state.copyWith(messages: next);
+        }
       case 'message.part.delta':
         _onPartDelta(event.data);
       case 'session.updated':
         _onSession(event.data);
       case 'session.started':
+        state = state.copyWith(isStreaming: true);
       case 'session.completed':
-        state = state.copyWith(isStreaming: event.type != 'session.completed');
-      case 'session.error':
-        state = state.copyWith(
-          isStreaming: false,
-          error: _stringMessage(event.data['error']) ??
-              _stringMessage(event.data['message']) ??
-              'session error',
+        state = state.copyWith(isStreaming: false);
+        showAppNotification(
+          title: 'Agent finished',
+          body: state.sessionTitle.isNotEmpty
+              ? state.sessionTitle
+              : 'Session completed successfully',
         );
+      case 'session.error':
+        final errMsg = _stringMessage(event.data['error']) ??
+            _stringMessage(event.data['message']) ??
+            'session error';
+        state = state.copyWith(isStreaming: false, error: errMsg);
+        showAppNotification(
+          title: 'Agent error',
+          body: errMsg,
+        );
+      case 'gateway.reconnected':
+        // SSE just came back from a disconnect (e.g. gateway restart) — pull
+        // the latest session + messages so we don't keep showing stale
+        // 'running' bubbles for messages that ended while we were offline.
+        _load();
+      case 'session.usage':
+        final u = event.data['usage'] as Map<String, dynamic>?;
+        if (u != null) {
+          state = state.copyWith(
+            usage: TokenUsage(
+              inputTokens: (u['inputTokens'] as num?)?.toInt() ?? 0,
+              outputTokens: (u['outputTokens'] as num?)?.toInt() ?? 0,
+              totalTokens: (u['totalTokens'] as num?)?.toInt() ?? 0,
+            ),
+          );
+        }
       case 'status.updated':
         state = state.copyWith(
           isStreaming: event.data['status']?.toString() == 'running',

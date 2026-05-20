@@ -36,6 +36,20 @@ void main() {
       expect(agent.sessionKind, 'thread');
       expect(agent.commands.single.name, '/fast');
     });
+
+    test('exposes nested raw availability metadata', () {
+      final agent = Agent.fromJson(const <String, dynamic>{
+        'id': 'codex',
+        'displayName': 'Codex',
+        'raw': {
+          'available': true,
+          'command': {'command': 'codex'},
+        },
+      });
+
+      expect(agent.raw['available'], isTrue);
+      expect((agent.raw['command'] as Map)['command'], 'codex');
+    });
   });
 
   group('GatewaySession.fromJson', () {

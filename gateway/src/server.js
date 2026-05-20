@@ -2,6 +2,9 @@
 
 const http = require('node:http');
 const { URL } = require('node:url');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 
 const { AgentRegistry } = require('./agents');
 const { EventBus, makeEvent } = require('./events');
@@ -20,10 +23,22 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
   const store = new JsonStore(dataFile);
   await store.load();
 
-  // Reset sessions stuck in 'running' from a previous crash/restart.
+  // Reset sessions and orphaned messages stuck in 'running' from a previous
+  // crash/restart. Without this, the UI keeps showing a forever-streaming
+  // assistant bubble that will never produce more text.
   for (const session of store.data.sessions) {
     if (session.status === 'running') {
       session.status = 'idle';
+    }
+  }
+  for (const messages of Object.values(store.data.messagesBySession || {})) {
+    if (!Array.isArray(messages)) continue;
+    for (const msg of messages) {
+      if (msg && msg.status === 'running') {
+        msg.status = 'error';
+        msg.time = msg.time || {};
+        msg.time.completed = msg.time.completed || Date.now();
+      }
     }
   }
   await store.save();
@@ -31,6 +46,10 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
   const registry = adapters || new AgentRegistry();
   const bus = new EventBus();
   const activeRuns = new Map();
+  // Per-session queue of follow-up turns: messages the user sent while the
+  // agent was busy that we couldn't inject (Codex/Claude one-shot CLIs).
+  // Drained in handleExit so the agent processes them sequentially.
+  const pendingTurns = new Map();
 
   const server = http.createServer(async (request, response) => {
     setCors(response);
@@ -94,7 +113,44 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
           registry,
           bus,
           activeRuns,
+          pendingTurns,
         });
+      }
+
+      // GET /search?q=...&projectId=...
+      if (request.method === 'GET' && segments[0] === 'search') {
+        const q = (url.searchParams.get('q') || '').toLowerCase().trim();
+        const projectId = url.searchParams.get('projectId') || null;
+        if (!q) return sendJson(response, []);
+        const results = [];
+        const sessions = projectId
+          ? store.listSessions(projectId)
+          : store.data.sessions;
+        for (const session of sessions) {
+          const messages = store.listMessages(session.id);
+          for (const msg of messages) {
+            const text = (msg.parts || [])
+              .map((p) => p.text || p.output || '')
+              .join(' ')
+              .toLowerCase();
+            if (text.includes(q)) {
+              results.push({
+                sessionId: session.id,
+                sessionTitle: session.title,
+                agentId: session.agentId,
+                messageId: msg.id,
+                role: msg.role,
+                snippet: text.slice(
+                  Math.max(0, text.indexOf(q) - 40),
+                  text.indexOf(q) + q.length + 80,
+                ),
+              });
+              if (results.length >= 50) break;
+            }
+          }
+          if (results.length >= 50) break;
+        }
+        return sendJson(response, results);
       }
 
       throw httpError(404, 'not found');
@@ -214,6 +270,7 @@ async function handleSessions({
   registry,
   bus,
   activeRuns,
+  pendingTurns,
 }) {
   const session = store.getSession(segments[1]);
   if (!session) throw httpError(404, 'session not found');
@@ -228,11 +285,13 @@ async function handleSessions({
     const run = activeRuns.get(session.id);
     if (run) run.abort();
     activeRuns.delete(session.id);
+    pendingTurns?.delete(session.id);
     const adapter = registry.get(session.agentId);
     if (adapter?.deleteSession) {
       await adapter.deleteSession(session).catch(() => false);
     }
     await store.deleteSession(session.id);
+    bus.clearSession?.(session.id);
     return sendJson(response, { ok: true });
   }
 
@@ -275,8 +334,17 @@ async function handleSessions({
           await adapter.injectMessage(session, text, parts);
           injected = true;
         }
-        console.log(`[inject] session=${session.id} agent=${session.agentId} injected=${injected} text=${text.slice(0,80)}`);
-        return sendJson(response, { accepted: true, injected, sessionId: session.id }, 202);
+        let queued = false;
+        if (!injected) {
+          // Codex/Claude can't accept mid-turn input. Queue the message so
+          // it runs as the next turn instead of being lost.
+          const queue = pendingTurns.get(session.id) || [];
+          queue.push({ text, parts });
+          pendingTurns.set(session.id, queue);
+          queued = true;
+        }
+        console.log(`[inject] session=${session.id} agent=${session.agentId} injected=${injected} queued=${queued} text=${text.slice(0,80)}`);
+        return sendJson(response, { accepted: true, injected, queued, sessionId: session.id }, 202);
       }
       await startTurn({
         session,
@@ -286,15 +354,26 @@ async function handleSessions({
         registry,
         bus,
         activeRuns,
+        pendingTurns,
       });
       return sendJson(response, { accepted: true, sessionId: session.id }, 202);
     }
+  }
+
+  // DELETE /sessions/:sessionId/messages/:messageId
+  if (segments.length === 4 && segments[2] === 'messages' && request.method === 'DELETE') {
+    const messageId = segments[3];
+    const deleted = await store.deleteMessage(session.id, messageId);
+    if (!deleted) throw httpError(404, 'message not found');
+    emit(bus, 'message.deleted', session, { messageId }, { messageId });
+    return sendJson(response, { ok: true });
   }
 
   if (segments.length === 3 && segments[2] === 'abort' && request.method === 'POST') {
     const run = activeRuns.get(session.id);
     if (run) run.abort();
     activeRuns.delete(session.id);
+    pendingTurns?.delete(session.id);
     const adapter = registry.get(session.agentId);
     if (!run && adapter?.abort) {
       await adapter.abort(session).catch(() => false);
@@ -319,10 +398,67 @@ async function handleSessions({
     return;
   }
 
+  // GET /sessions/:sessionId/export?format=markdown|json
+  if (segments.length === 3 && segments[2] === 'export' && request.method === 'GET') {
+    const format = url.searchParams.get('format') || 'markdown';
+    const messages = store.listMessages(session.id);
+    if (format === 'json') {
+      return sendJson(response, {
+        session: {
+          id: session.id,
+          title: session.title,
+          agentId: session.agentId,
+          directory: session.directory,
+          createdAt: session.createdAt,
+        },
+        messages,
+      });
+    }
+    // markdown
+    let md = `# ${session.title}\n\n`;
+    md += `**Agent:** ${session.agentId}  \n`;
+    md += `**Directory:** ${session.directory || '—'}  \n`;
+    md += `**Created:** ${session.createdAt || '—'}  \n\n---\n\n`;
+    for (const msg of messages) {
+      const role = (msg.role || 'unknown').toUpperCase();
+      md += `### ${role}\n\n`;
+      for (const part of msg.parts || []) {
+        if (part.type === 'text' && part.text) {
+          md += `${part.text}\n\n`;
+        } else if (part.type === 'tool') {
+          md += `> **Tool:** ${part.toolName || 'unknown'}`;
+          if (part.output) md += `\n> \`\`\`\n> ${part.output.slice(0, 500)}\n> \`\`\``;
+          md += '\n\n';
+        }
+      }
+    }
+    response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end(md);
+    return;
+  }
+
+  // GET /sessions/:sessionId/diff  — git diff for this session's directory
+  if (segments.length === 3 && segments[2] === 'diff' && request.method === 'GET') {
+    const dir = session.directory;
+    if (!dir) throw httpError(400, 'session has no directory');
+    try {
+      const { stdout: diffText } = await execFileAsync(
+        'git', ['diff', '--no-color'], { cwd: dir, maxBuffer: 2 * 1024 * 1024 },
+      );
+      const { stdout: stagedText } = await execFileAsync(
+        'git', ['diff', '--cached', '--no-color'], { cwd: dir, maxBuffer: 2 * 1024 * 1024 },
+      ).catch(() => ({ stdout: '' }));
+      const combined = (diffText + stagedText).trim();
+      return sendJson(response, { diff: combined, directory: dir });
+    } catch (err) {
+      return sendJson(response, { diff: '', error: err.message, directory: dir });
+    }
+  }
+
   throw httpError(404, 'not found');
 }
 
-async function startTurn({ session, text, parts = [], store, registry, bus, activeRuns }) {
+async function startTurn({ session, text, parts = [], store, registry, bus, activeRuns, pendingTurns }) {
   if (activeRuns.has(session.id)) {
     throw httpError(409, 'session already running');
   }
@@ -331,7 +467,15 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
   console.log(`[startTurn] agent=${session.agentId} model=${session.modelId} dir=${session.directory} prompt=${text.slice(0,80)}`);
   const canRunNative = Boolean(adapter.runNative && session.agentSessionId);
 
-  const running = await store.updateSession(session.id, { status: 'running' });
+  // Auto-title from first user message when title is a default placeholder.
+  const isDefaultTitle = /^(Codex|Claude Code|OpenCode)\s+session$/i.test(session.title);
+  const autoTitle = isDefaultTitle && text.trim()
+    ? text.trim().replace(/\s+/g, ' ').slice(0, 50) + (text.trim().length > 50 ? '…' : '')
+    : null;
+  const runPatch = { status: 'running' };
+  if (autoTitle) runPatch.title = autoTitle;
+
+  const running = await store.updateSession(session.id, runPatch);
   emit(bus, 'session.started', running, { session: running });
   emit(bus, 'session.updated', running, { session: running });
 
@@ -423,6 +567,9 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
         });
         return textWrite;
       },
+      onUsage: (usage) => {
+        emit(bus, 'session.usage', running, { usage }, usage);
+      },
       onAgentSessionId: async (agentSessionId, raw) => {
         if (agentSessionId && agentSessionId !== session.agentSessionId) {
           session.agentSessionId = agentSessionId;
@@ -499,6 +646,29 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
       );
     }
     emit(bus, 'session.updated', updated, { session: updated });
+
+    // Drain any follow-up messages the user queued during this turn.
+    const queue = pendingTurns && pendingTurns.get(session.id);
+    if (queue && queue.length > 0 && !aborted) {
+      const next = queue.shift();
+      if (queue.length === 0) pendingTurns.delete(session.id);
+      console.log(`[queue] draining session=${session.id} remaining=${queue.length}`);
+      const refreshed = store.getSession(session.id);
+      if (refreshed) {
+        startTurn({
+          session: refreshed,
+          text: next.text,
+          parts: next.parts,
+          store,
+          registry,
+          bus,
+          activeRuns,
+          pendingTurns,
+        }).catch((err) => {
+          console.error(`[queue] failed to start queued turn for ${session.id}:`, err.message);
+        });
+      }
+    }
   }
 }
 

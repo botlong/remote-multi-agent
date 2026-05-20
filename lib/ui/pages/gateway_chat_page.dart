@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/gateway_providers.dart';
 import '../widgets/agent_badge.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/session_status_chip.dart';
+import 'diff_page.dart';
 import 'gateway_ui_adapters.dart';
 
 class GatewayChatPage extends ConsumerStatefulWidget {
@@ -23,7 +25,8 @@ class GatewayChatPage extends ConsumerStatefulWidget {
   ConsumerState<GatewayChatPage> createState() => _GatewayChatPageState();
 }
 
-class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
+class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
+    with WidgetsBindingObserver {
   final _input = TextEditingController();
   final _focus = FocusNode();
   final _scroll = ScrollController();
@@ -33,15 +36,27 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
   void initState() {
     super.initState();
     _input.addListener(_onInputChanged);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _input.removeListener(_onInputChanged);
     _input.dispose();
     _focus.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // OS may have killed the SSE socket while backgrounded; refresh it.
+      ref
+          .read(gatewayChatProvider(widget.session.id).notifier)
+          .reconnect();
+    }
   }
 
   void _onInputChanged() {
@@ -55,19 +70,39 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(gatewayChatProvider(widget.session.id));
-    final messages = chatState.orderedMessages.toList(growable: false);
+    final messages = chatState.orderedMessages.toList(growable: false).reversed.toList();
     final status = _statusFromState(chatState);
     final agent =
         widget.agent ?? _agentFromCatalog(ref, widget.session.agentId);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.session.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.difference_outlined),
+            tooltip: 'View diff',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => DiffPage(sessionId: widget.session.id),
+              ),
+            ),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Export',
+            onSelected: (v) => _export(v),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'markdown', child: Text('Copy as Markdown')),
+              PopupMenuItem(value: 'json', child: Text('Copy as JSON')),
+            ],
+          ),
+        ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(54),
+          preferredSize: const Size.fromHeight(48),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: Column(
               children: [
                 Row(
@@ -77,7 +112,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
                       label: agent?.displayName,
                       compact: true,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     SessionStatusChip(status: status, compact: true),
                     if (widget.session.modelId?.isNotEmpty == true) ...[
                       const SizedBox(width: 8),
@@ -86,25 +121,16 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
                           widget.session.modelId!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                fontFamily: 'monospace',
+                                fontSize: 10,
+                              ),
                         ),
                       ),
                     ] else
                       const Spacer(),
                   ],
-                ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    widget.project.directory,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
                 ),
               ],
             ),
@@ -114,17 +140,27 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: messages.isEmpty
-                ? const _EmptyChat()
-                : ListView.builder(
-                    controller: _scroll,
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    itemCount: messages.length,
-                    itemBuilder: (_, index) =>
-                        MessageBubble(message: messages[index]),
-                  ),
+            child: GestureDetector(
+              onTap: () => _focus.unfocus(),
+              behavior: HitTestBehavior.translucent,
+              child: messages.isEmpty
+                  ? const _EmptyChat()
+                  : ListView.builder(
+                      controller: _scroll,
+                      reverse: true,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      itemCount: messages.length,
+                      itemBuilder: (_, index) {
+                        final msg = messages[index];
+                        return MessageBubble(
+                          message: msg,
+                          onDelete: () => _deleteMessage(msg.id),
+                        );
+                      },
+                    ),
+            ),
           ),
           if (_showCommands)
             FutureBuilder<List<GatewayCommandView>>(
@@ -148,6 +184,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
                 );
               },
             ),
+          if (chatState.usage != null) _UsageBar(usage: chatState.usage!),
           _InputBar(
             controller: _input,
             focusNode: _focus,
@@ -209,7 +246,6 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
       } else {
         await notifier.sendMessage(text);
       }
-      _scrollToBottom();
     } catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -223,15 +259,54 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
     await notifier.abort();
   }
 
+  Future<void> _deleteMessage(String messageId) async {
+    try {
+      final notifier =
+          ref.read(gatewayChatProvider(widget.session.id).notifier);
+      await notifier.deleteMessage(messageId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _export(String format) async {
+    try {
+      final client = ref.read(gatewayClientProvider);
+      final content =
+          await client.exportSession(widget.session.id, format: format);
+      await Clipboard.setData(ClipboardData(text: content));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            format == 'json'
+                ? 'JSON copied to clipboard'
+                : 'Markdown copied to clipboard',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
+  }
+
   void _scrollToBottom() {
     if (!_scroll.hasClients) return;
-    final position = _scroll.position;
-    if (position.maxScrollExtent - position.pixels > 160) return;
-    _scroll.animateTo(
-      position.maxScrollExtent,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-    );
+    // reverse: true means offset 0 = bottom
+    if (_scroll.offset > 0) {
+      _scroll.animateTo(
+        0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 }
 
@@ -276,49 +351,75 @@ class _CommandSuggestions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerHigh,
+    final scheme = theme.colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        border: Border(
+          top: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.2),
+          ),
+        ),
+      ),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
           shrinkWrap: true,
           itemCount: commands.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 2),
           itemBuilder: (_, index) {
             final command = commands[index];
-            return InkWell(
-              onTap: () => onSelected(command),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
-                  children: [
-                    Icon(
-                      _iconFor(command.name),
-                      size: 20,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      command.name,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (command.description.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          command.description,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+            return Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                onTap: () => onSelected(command),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: Icon(
+                          _iconFor(command.name),
+                          size: 16,
+                          color: scheme.primary,
                         ),
                       ),
+                      const SizedBox(width: 10),
+                      Text(
+                        command.name,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                      if (command.description.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            command.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             );
@@ -347,12 +448,20 @@ class _InputBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surface,
+    final scheme = theme.colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(
+          top: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.2),
+          ),
+        ),
+      ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -367,13 +476,23 @@ class _InputBar extends StatelessWidget {
                         ? 'Send guidance to running agent...'
                         : 'Message, /command, or \$shell',
                     filled: true,
-                    fillColor: theme.colorScheme.surfaceContainerHigh,
+                    fillColor: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(22),
                       borderSide: BorderSide.none,
                     ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide(
+                        color: scheme.primary.withValues(alpha: 0.3),
+                      ),
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
+                      horizontal: 18,
                       vertical: 12,
                     ),
                   ),
@@ -381,29 +500,63 @@ class _InputBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               if (running) ...[
-                IconButton.filled(
-                  icon: const Icon(Icons.send),
-                  tooltip: 'Send guidance',
-                  onPressed: onSend,
-                ),
-                const SizedBox(width: 4),
-                IconButton.filled(
-                  icon: const Icon(Icons.stop),
-                  tooltip: 'Stop agent',
-                  style: IconButton.styleFrom(
-                    backgroundColor: theme.colorScheme.error,
-                  ),
-                  onPressed: onAbort,
-                ),
+                _SendButton(onPressed: onSend),
+                const SizedBox(width: 6),
+                _StopButton(onPressed: onAbort),
               ] else
-                IconButton.filled(
-                  icon: const Icon(Icons.send),
-                  tooltip: 'Send',
-                  onPressed: onSend,
-                ),
+                _SendButton(onPressed: onSend),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SendButton extends StatelessWidget {
+  const _SendButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        shape: BoxShape.circle,
+      ),
+      child: IconButton(
+        icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+        color: scheme.onPrimary,
+        onPressed: onPressed,
+        tooltip: 'Send',
+        padding: EdgeInsets.zero,
+      ),
+    );
+  }
+}
+
+class _StopButton extends StatelessWidget {
+  const _StopButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: IconButton(
+        icon: Icon(Icons.stop_rounded, size: 20, color: scheme.error),
+        onPressed: onPressed,
+        tooltip: 'Stop agent',
+        padding: EdgeInsets.zero,
       ),
     );
   }
@@ -414,14 +567,88 @@ class _EmptyChat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Text(
-          'Start this agent session.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
+        padding: const EdgeInsets.all(48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.bubble_chart_outlined,
+              size: 44,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.25),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'New conversation',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _UsageBar extends StatelessWidget {
+  const _UsageBar({required this.usage});
+  final TokenUsage usage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final ratio = usage.ratio.clamp(0.0, 1.0);
+    final isHigh = ratio > 0.8;
+    final color = isHigh ? scheme.error : scheme.primary;
+    final totalK = (usage.totalTokens / 1000).toStringAsFixed(1);
+    final limitK = (TokenUsage.contextLimit / 1000).toStringAsFixed(0);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 6, 14, 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.data_usage, size: 13, color: color),
+              const SizedBox(width: 6),
+              Text(
+                '${totalK}k / ${limitK}k tokens',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              if (isHigh)
+                Text(
+                  'Consider /compact',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.error,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 3,
+              backgroundColor: scheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation(color),
+            ),
+          ),
+        ],
       ),
     );
   }

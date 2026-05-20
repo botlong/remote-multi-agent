@@ -213,6 +213,79 @@ test('gateway stores CLI stderr when an adapter exits with an error', async (t) 
   assert.equal(messages[1].parts[0].text, 'cli usage error');
 });
 
+test('gateway startup marks orphaned running messages as error', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rma-gateway-recover-'));
+  const dataFile = path.join(root, 'store.json');
+  const projectDir = path.join(root, 'project');
+  await fs.mkdir(projectDir);
+  await fs.writeFile(
+    dataFile,
+    JSON.stringify(
+      {
+        projects: [
+          {
+            id: 'p1',
+            name: 'project',
+            directory: projectDir,
+            updatedAt: 1,
+          },
+        ],
+        sessions: [
+          {
+            id: 's1',
+            projectId: 'p1',
+            directory: projectDir,
+            agentId: 'fake',
+            title: 'Recover me',
+            status: 'running',
+            createdAt: 1,
+            updatedAt: 1,
+            raw: {},
+          },
+        ],
+        messagesBySession: {
+          s1: [
+            {
+              id: 'm1',
+              role: 'assistant',
+              sessionID: 's1',
+              status: 'running',
+              time: { created: 1 },
+              parts: [
+                {
+                  id: 'm1_text',
+                  messageID: 'm1',
+                  sessionID: 's1',
+                  type: 'text',
+                  text: '',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+
+  const server = await createGatewayServer({ dataFile, adapters: new FakeRegistry() });
+  await listen(server);
+  t.after(() => {
+    server.closeAllRuns?.();
+    server.close();
+  });
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const session = await getJson(`${base}/sessions/s1`);
+  assert.equal(session.status, 'idle');
+
+  const messages = await getJson(`${base}/sessions/s1/messages`);
+  assert.equal(messages[0].status, 'error');
+  assert.equal(typeof messages[0].time.completed, 'number');
+});
+
 class SingleAdapterRegistry {
   constructor(adapter) {
     this.adapter = adapter;
