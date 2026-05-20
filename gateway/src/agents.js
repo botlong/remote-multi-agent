@@ -227,6 +227,73 @@ function buildCodexArgs(session) {
   return args;
 }
 
+/**
+ * Read the active Claude provider from CC-Switch's SQLite database.
+ * Returns { baseUrl, authToken } or null if not available.
+ *
+ * CC-Switch is a desktop app that manages multiple Claude/Codex/etc API
+ * provider configurations. The DB is at ~/.cc-switch/cc-switch.db.
+ *
+ * Schema (relevant table):
+ *   providers(id, app_type, name, settings_config, is_current, ...)
+ *   settings_config is JSON like:
+ *     { "env": { "ANTHROPIC_BASE_URL": "...", "ANTHROPIC_AUTH_TOKEN": "..." } }
+ */
+async function readCcSwitchClaudeProvider() {
+  try {
+    const dbPath = path.join(os.homedir(), '.cc-switch', 'cc-switch.db');
+    // Quick existence check before importing node:sqlite (which is gated)
+    try {
+      await fs.access(dbPath);
+    } catch {
+      return null;
+    }
+    // node:sqlite was experimental in 22.x and stable in 24.x.
+    // Use dynamic import to avoid breaking older Node.
+    let DatabaseSync;
+    try {
+      ({ DatabaseSync } = require('node:sqlite'));
+    } catch {
+      return null;
+    }
+    // Copy the file to a temp path to avoid SQLITE_BUSY when CC-Switch app
+    // is running and holding a write lock.
+    const tmpPath = path.join(
+      os.tmpdir(),
+      `cc-switch-${process.pid}-${Date.now()}.db`,
+    );
+    try {
+      await fs.copyFile(dbPath, tmpPath);
+    } catch {
+      return null;
+    }
+    let db;
+    try {
+      db = new DatabaseSync(tmpPath, { readOnly: true });
+      const row = db
+        .prepare(
+          "SELECT settings_config FROM providers WHERE app_type='claude' AND is_current=1 LIMIT 1",
+        )
+        .get();
+      if (!row || !row.settings_config) return null;
+      const cfg = JSON.parse(row.settings_config);
+      const env = cfg && cfg.env ? cfg.env : {};
+      const authToken = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY;
+      const baseUrl = env.ANTHROPIC_BASE_URL;
+      if (!authToken) return null;
+      return { authToken, baseUrl };
+    } finally {
+      try {
+        if (db) db.close();
+      } catch {}
+      fs.unlink(tmpPath).catch(() => {});
+    }
+  } catch (err) {
+    console.warn(`[claude-code] CC-Switch read failed: ${err.message}`);
+    return null;
+  }
+}
+
 class ClaudeCodeAdapter {
   constructor() {
     this.id = 'claude-code';
@@ -262,12 +329,24 @@ class ClaudeCodeAdapter {
       return envModels.map((id) => ({ id, displayName: id, raw: { id } }));
     }
 
-    // 2. Try fetching from Anthropic API
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // 2. Try fetching from Anthropic API (or compatible proxy).
+    //    Auth resolution order:
+    //      a) ANTHROPIC_API_KEY env (official)
+    //      b) ANTHROPIC_AUTH_TOKEN env (CLI-style bearer)
+    //      c) Active provider in CC-Switch DB (~/.cc-switch/cc-switch.db)
+    let apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
+    let baseUrl = process.env.ANTHROPIC_BASE_URL;
+    if (!apiKey) {
+      const ccs = await readCcSwitchClaudeProvider();
+      if (ccs) {
+        apiKey = ccs.authToken;
+        if (!baseUrl) baseUrl = ccs.baseUrl;
+      }
+    }
     if (apiKey) {
       try {
-        const baseUrl = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
-        const res = await fetch(`${baseUrl}/v1/models`, {
+        const url = (baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
+        const res = await fetch(`${url}/v1/models`, {
           headers: {
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
