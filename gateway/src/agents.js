@@ -287,10 +287,13 @@ class ClaudeCodeAdapter {
       '--verbose',
       '--include-partial-messages',
     ];
-    const permissionMode = (session.raw && session.raw.permissionMode) || process.env.CLAUDE_CODE_PERMISSION_MODE;
-    if (permissionMode) {
-      args.push('--permission-mode', permissionMode);
-    }
+    // Claude `-p` (print) mode cannot prompt interactively. If we don't pass
+    // a permission-mode it defaults to "ask" and stalls waiting for input.
+    // 'acceptEdits' is the closest match to Codex's 'workspace-write' default.
+    const permissionMode = (session.raw && session.raw.permissionMode) ||
+      process.env.CLAUDE_CODE_PERMISSION_MODE ||
+      'acceptEdits';
+    args.push('--permission-mode', permissionMode);
     if (session.modelId) args.push('--model', session.modelId);
     if (withResume && session.agentSessionId) {
       args.push('--resume', session.agentSessionId);
