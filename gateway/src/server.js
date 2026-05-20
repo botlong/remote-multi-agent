@@ -100,6 +100,42 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
         });
       }
 
+      // GET /search?q=...&projectId=...
+      if (request.method === 'GET' && segments[0] === 'search') {
+        const q = (url.searchParams.get('q') || '').toLowerCase().trim();
+        const projectId = url.searchParams.get('projectId') || null;
+        if (!q) return sendJson(response, []);
+        const results = [];
+        const sessions = projectId
+          ? store.listSessions(projectId)
+          : store.data.sessions;
+        for (const session of sessions) {
+          const messages = store.listMessages(session.id);
+          for (const msg of messages) {
+            const text = (msg.parts || [])
+              .map((p) => p.text || p.output || '')
+              .join(' ')
+              .toLowerCase();
+            if (text.includes(q)) {
+              results.push({
+                sessionId: session.id,
+                sessionTitle: session.title,
+                agentId: session.agentId,
+                messageId: msg.id,
+                role: msg.role,
+                snippet: text.slice(
+                  Math.max(0, text.indexOf(q) - 40),
+                  text.indexOf(q) + q.length + 80,
+                ),
+              });
+              if (results.length >= 50) break;
+            }
+          }
+          if (results.length >= 50) break;
+        }
+        return sendJson(response, results);
+      }
+
       throw httpError(404, 'not found');
     } catch (error) {
       if (response.headersSent) {

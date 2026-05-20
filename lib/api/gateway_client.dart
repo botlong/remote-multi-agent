@@ -181,6 +181,20 @@ class GatewayClient {
     await _dio.delete<dynamic>('/sessions/${_path(sessionId)}');
   }
 
+  Future<List<Map<String, dynamic>>> search(
+    String query, {
+    String? projectId,
+  }) async {
+    final res = await _dio.get<List<dynamic>>(
+      '/search',
+      queryParameters: <String, dynamic>{
+        'q': query,
+        if (projectId != null) 'projectId': projectId,
+      },
+    );
+    return _readList(res.data);
+  }
+
   Future<Map<String, dynamic>> getSessionDiff(String sessionId) async {
     final res = await _dio.get<Map<String, dynamic>>(
       '/sessions/${_path(sessionId)}/diff',

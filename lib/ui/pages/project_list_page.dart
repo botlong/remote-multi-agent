@@ -7,6 +7,7 @@ import '../../state/settings_store.dart';
 import '../widgets/directory_picker.dart';
 import 'gateway_ui_adapters.dart';
 import 'project_detail_page.dart';
+import 'search_page.dart';
 
 class ProjectListPage extends ConsumerWidget {
   const ProjectListPage({super.key});
@@ -23,6 +24,14 @@ class ProjectListPage extends ConsumerWidget {
         title: const Text('Projects'),
         automaticallyImplyLeading: false,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search messages',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh projects',
