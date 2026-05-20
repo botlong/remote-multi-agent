@@ -912,15 +912,16 @@ function extractToolCall(raw) {
   if (raw.type === 'function_call' && raw.name) {
     return {
       name: raw.name,
-      input: raw.arguments || raw.call_id || '',
+      input: tryParseJson(raw.arguments) || raw.arguments || '',
       status: raw.status || 'running',
+      callId: raw.call_id,
     };
   }
   // Codex function_call_output
   if (raw.type === 'function_call_output') {
     return {
       name: raw.name || 'function_call',
-      output: typeof raw.output === 'string' ? raw.output : JSON.stringify(raw.output || ''),
+      output: raw.output,
       status: 'completed',
       callId: raw.call_id,
     };
@@ -937,7 +938,7 @@ function extractToolCall(raw) {
   if (raw.type === 'tool_use' && raw.name) {
     return {
       name: raw.name,
-      input: typeof raw.input === 'string' ? raw.input : JSON.stringify(raw.input || {}),
+      input: raw.input || {},
       status: 'running',
       toolUseId: raw.id,
     };
@@ -945,7 +946,7 @@ function extractToolCall(raw) {
   if (raw.type === 'tool_result') {
     return {
       name: raw.name || 'tool',
-      output: typeof raw.content === 'string' ? raw.content : JSON.stringify(raw.content || ''),
+      output: raw.content,
       status: raw.is_error ? 'error' : 'completed',
       toolUseId: raw.tool_use_id,
     };
@@ -1012,6 +1013,16 @@ function extractAgentSessionId(raw) {
 function parseJsonLine(line) {
   try {
     const parsed = JSON.parse(line);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function tryParseJson(value) {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (_) {
     return null;

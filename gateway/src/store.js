@@ -251,14 +251,19 @@ function appendToolPartToMessage(message, toolCall) {
   const existingIdx = next.parts.findIndex(
     (p) => p.type === 'tool' && p.toolCallId === (toolCall.callId || toolCall.toolUseId),
   );
+  const rawInput = toolCall.input;
+  const inputObj = typeof rawInput === 'string'
+    ? (tryParseJsonSafe(rawInput) || (rawInput ? { command: rawInput } : null))
+    : (rawInput && typeof rawInput === 'object' ? rawInput : null);
   const toolPart = {
     id: partId,
     messageID: next.id,
     sessionID: next.sessionID,
     type: 'tool',
+    tool: toolCall.name,
     name: toolCall.name,
-    input: toolCall.input || '',
-    output: toolCall.output || '',
+    input: inputObj,
+    output: toolCall.output ?? null,
     status: toolCall.status || 'running',
     toolCallId: toolCall.callId || toolCall.toolUseId || null,
   };
@@ -362,6 +367,16 @@ function defaultDirectories(store) {
       os.homedir(),
     ]),
   );
+}
+
+function tryParseJsonSafe(value) {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 module.exports = {
