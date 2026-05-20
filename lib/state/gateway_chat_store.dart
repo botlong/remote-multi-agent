@@ -101,17 +101,19 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     try {
       final session = await _client.getSession(state.sessionId);
       final rawMessages = await _client.listMessages(state.sessionId);
-      // Re-read state.messages after await — SSE events may have arrived.
+      // Merge REST snapshot with the LATEST state.messages — not the snapshot
+      // we took before the await — otherwise any SSE deltas that arrived
+      // mid-flight get clobbered.
       final next = Map<String, Message>.from(state.messages);
       for (final json in rawMessages) {
         final message = Message.fromJson(json);
-        if (message.id.isNotEmpty) {
-          final existing = next[message.id];
-          // Only use REST data if SSE hasn't already provided more parts.
-          if (existing == null ||
-              (message.parts.length > existing.parts.length)) {
-            next[message.id] = message;
-          }
+        if (message.id.isEmpty) continue;
+        final existing = next[message.id];
+        // Prefer whichever has more parts (SSE-deltas may have built up
+        // a richer in-memory message than what REST returns).
+        if (existing == null ||
+            (message.parts.length > existing.parts.length)) {
+          next[message.id] = message;
         }
       }
       state = state.copyWith(
@@ -215,6 +217,11 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
           title: 'Agent error',
           body: errMsg,
         );
+      case 'gateway.reconnected':
+        // SSE just came back from a disconnect (e.g. gateway restart) — pull
+        // the latest session + messages so we don't keep showing stale
+        // 'running' bubbles for messages that ended while we were offline.
+        _load();
       case 'session.usage':
         final u = event.data['usage'] as Map<String, dynamic>?;
         if (u != null) {

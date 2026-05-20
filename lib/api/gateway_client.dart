@@ -267,6 +267,8 @@ class GatewayClient {
     final controller = StreamController<GatewayEvent>();
     SseClient? client;
     StreamSubscription<SseEvent>? sub;
+    StreamSubscription<SseState>? stateSub;
+    bool everConnected = false;
 
     controller.onListen = () {
       client = SseClient(
@@ -286,10 +288,32 @@ class GatewayClient {
           if (!controller.isClosed) controller.addError(error);
         },
       );
+      // Watch state transitions so consumers can refetch after a reconnect
+      // (gateway restart, network blip). Synthesize a 'gateway.reconnected'
+      // event on every connect AFTER the first.
+      stateSub = client!.state.listen((s) {
+        if (controller.isClosed) return;
+        if (s == SseState.connected) {
+          if (everConnected) {
+            controller.add(
+              GatewayEvent.fromJson(
+                <String, dynamic>{
+                  'type': 'gateway.reconnected',
+                  'sessionId': sessionId,
+                  'data': <String, dynamic>{},
+                },
+                sseEvent: 'gateway',
+              ),
+            );
+          }
+          everConnected = true;
+        }
+      });
     };
 
     controller.onCancel = () async {
       await sub?.cancel();
+      await stateSub?.cancel();
       await client?.dispose();
     };
 

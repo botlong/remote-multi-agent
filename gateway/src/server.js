@@ -23,10 +23,22 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
   const store = new JsonStore(dataFile);
   await store.load();
 
-  // Reset sessions stuck in 'running' from a previous crash/restart.
+  // Reset sessions and orphaned messages stuck in 'running' from a previous
+  // crash/restart. Without this, the UI keeps showing a forever-streaming
+  // assistant bubble that will never produce more text.
   for (const session of store.data.sessions) {
     if (session.status === 'running') {
       session.status = 'idle';
+    }
+  }
+  for (const messages of Object.values(store.data.messages || {})) {
+    if (!Array.isArray(messages)) continue;
+    for (const msg of messages) {
+      if (msg && msg.status === 'running') {
+        msg.status = 'error';
+        msg.time = msg.time || {};
+        msg.time.completed = msg.time.completed || Date.now();
+      }
     }
   }
   await store.save();
