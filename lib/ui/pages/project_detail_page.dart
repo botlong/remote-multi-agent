@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -8,6 +9,7 @@ import '../widgets/session_status_chip.dart';
 import 'agent_group_page.dart';
 import 'gateway_chat_page.dart';
 import 'gateway_ui_adapters.dart';
+import 'search_page.dart';
 
 class ProjectDetailPage extends ConsumerWidget {
   const ProjectDetailPage({
@@ -26,6 +28,18 @@ class ProjectDetailPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(project.name),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search in project',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => SearchPage(projectId: project.id),
+              ),
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
@@ -166,24 +180,38 @@ class _ModelSection extends ConsumerWidget {
       title: Text(modelId == '_default' ? 'Default model' : modelId),
       children: [
         for (final session in sessions)
-          ListTile(
-            contentPadding: const EdgeInsets.only(left: 8, right: 0),
-            title: Text(
-              session.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          Dismissible(
+            key: ValueKey(session.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              color: Theme.of(context).colorScheme.error,
+              child: const Icon(Icons.delete, color: Colors.white),
             ),
-            subtitle: Text(_relativeTime(session.updatedAtMs)),
-            trailing: SessionStatusChip(status: session.status, compact: true),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => GatewayChatPage(
-                  session: session,
-                  project: project,
+            confirmDismiss: (_) => _confirmSwipeDelete(context),
+            onDismissed: (_) => ref
+                .read(gatewaySessionStoreProvider(project.id).notifier)
+                .deleteSession(session.id),
+            child: ListTile(
+              contentPadding: const EdgeInsets.only(left: 8, right: 0),
+              title: Text(
+                session.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(_relativeTime(session.updatedAtMs)),
+              trailing: SessionStatusChip(status: session.status, compact: true),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => GatewayChatPage(
+                    session: session,
+                    project: project,
+                  ),
                 ),
               ),
+              onLongPress: () => _showSessionMenu(context, ref, session),
             ),
-            onLongPress: () => _showSessionMenu(context, ref, session),
           ),
       ],
     );
@@ -206,6 +234,29 @@ class _ModelSection extends ConsumerWidget {
               onTap: () {
                 Navigator.pop(ctx);
                 _showRenameDialog(context, ref, session);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share),
+              title: const Text('Export as Markdown'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                try {
+                  final client = ref.read(gatewayClientProvider);
+                  final md = await client.exportSession(session.id);
+                  await Clipboard.setData(ClipboardData(text: md));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Markdown copied')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Export failed: $e')),
+                    );
+                  }
+                }
               },
             ),
             ListTile(
@@ -269,6 +320,29 @@ class _ModelSection extends ConsumerWidget {
               }
             },
             child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _confirmSwipeDelete(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete session?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
           ),
         ],
       ),
