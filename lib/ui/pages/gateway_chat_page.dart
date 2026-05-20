@@ -4,10 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/gateway_providers.dart';
 import '../widgets/agent_badge.dart';
+import '../widgets/attachment_picker.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/session_status_chip.dart';
 import 'diff_page.dart';
 import 'gateway_ui_adapters.dart';
+
+const _scrollAwayThreshold = 200.0;
 
 class GatewayChatPage extends ConsumerStatefulWidget {
   const GatewayChatPage({
@@ -31,11 +34,16 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   final _focus = FocusNode();
   final _scroll = ScrollController();
   bool _showCommands = false;
+  bool _isScrolledAway = false;
+  int _lastMessageCount = 0;
+  bool _hasNewWhileAway = false;
+  final List<Attachment> _attachments = [];
 
   @override
   void initState() {
     super.initState();
     _input.addListener(_onInputChanged);
+    _scroll.addListener(_onScroll);
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -43,10 +51,21 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _input.removeListener(_onInputChanged);
+    _scroll.removeListener(_onScroll);
     _input.dispose();
     _focus.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    final away = _scroll.hasClients && _scroll.offset > _scrollAwayThreshold;
+    if (away != _isScrolledAway) {
+      setState(() {
+        _isScrolledAway = away;
+        if (!away) _hasNewWhileAway = false;
+      });
+    }
   }
 
   @override
@@ -137,29 +156,62 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
           ),
         ),
       ),
-      body: Column(
+      body: Builder(builder: (context) {
+        // Track new messages arriving while scrolled away
+        if (messages.length > _lastMessageCount && _isScrolledAway) {
+          _hasNewWhileAway = true;
+        }
+        _lastMessageCount = messages.length;
+
+        return Column(
         children: [
           Expanded(
-            child: GestureDetector(
-              onTap: () => _focus.unfocus(),
-              behavior: HitTestBehavior.translucent,
-              child: messages.isEmpty
-                  ? const _EmptyChat()
-                  : ListView.builder(
-                      controller: _scroll,
-                      reverse: true,
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      itemCount: messages.length,
-                      itemBuilder: (_, index) {
-                        final msg = messages[index];
-                        return MessageBubble(
-                          message: msg,
-                          onDelete: () => _deleteMessage(msg.id),
-                        );
-                      },
+            child: Stack(
+              children: [
+                GestureDetector(
+                  onTap: () => _focus.unfocus(),
+                  behavior: HitTestBehavior.translucent,
+                  child: messages.isEmpty
+                      ? const _EmptyChat()
+                      : ListView.builder(
+                          controller: _scroll,
+                          reverse: true,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                          itemCount: messages.length,
+                          itemBuilder: (_, index) {
+                            final msg = messages[index];
+                            return MessageBubble(
+                              message: msg,
+                              onDelete: () => _deleteMessage(msg.id),
+                              onResend: (text) => _resend(text),
+                              onEditResend: (text) => _editResend(text),
+                              onQuote: (text) => _quote(text),
+                            );
+                          },
+                        ),
+                ),
+                if (_isScrolledAway || _hasNewWhileAway)
+                  Positioned(
+                    bottom: 8,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: _ScrollToBottomButton(
+                        hasNew: _hasNewWhileAway,
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          _scrollToBottom();
+                          setState(() {
+                            _isScrolledAway = false;
+                            _hasNewWhileAway = false;
+                          });
+                        },
+                      ),
                     ),
+                  ),
+              ],
             ),
           ),
           if (_showCommands)
@@ -184,6 +236,11 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
                 );
               },
             ),
+          if (_attachments.isNotEmpty)
+            AttachmentPreviewStrip(
+              attachments: _attachments,
+              onRemove: (i) => setState(() => _attachments.removeAt(i)),
+            ),
           if (chatState.usage != null) _UsageBar(usage: chatState.usage!),
           _InputBar(
             controller: _input,
@@ -191,9 +248,11 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
             running: status == 'running',
             onSend: _send,
             onAbort: _abort,
+            onAttach: _pickAttachments,
           ),
         ],
-      ),
+      );
+      }),
     );
   }
 
@@ -234,17 +293,32 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     return fromGateway.isNotEmpty ? fromGateway : _fallbackCommands(agent.id);
   }
 
+  Future<void> _pickAttachments() async {
+    final picked = await showAttachmentPicker(context);
+    if (picked != null && picked.isNotEmpty) {
+      setState(() => _attachments.addAll(picked));
+    }
+  }
+
   Future<void> _send() async {
     final text = _input.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _attachments.isEmpty) return;
+    HapticFeedback.lightImpact();
     _input.clear();
+    final pendingAttachments = List<Attachment>.from(_attachments);
+    setState(() => _attachments.clear());
     try {
       final notifier =
           ref.read(gatewayChatProvider(widget.session.id).notifier);
       if (text.startsWith('/')) {
         await notifier.sendSlashCommand(text);
       } else {
-        await notifier.sendMessage(text);
+        await notifier.sendMessage(
+          text,
+          attachments: pendingAttachments.isEmpty
+              ? null
+              : pendingAttachments.map((a) => a.toPartJson()).toList(),
+        );
       }
     } catch (err) {
       if (!mounted) return;
@@ -255,6 +329,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   }
 
   Future<void> _abort() async {
+    HapticFeedback.mediumImpact();
     final notifier = ref.read(gatewayChatProvider(widget.session.id).notifier);
     await notifier.abort();
   }
@@ -307,6 +382,24 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
         curve: Curves.easeOutCubic,
       );
     }
+  }
+
+  void _resend(String text) {
+    _input.text = text;
+    _send();
+  }
+
+  void _editResend(String text) {
+    _input.text = text;
+    _input.selection = TextSelection.collapsed(offset: text.length);
+    _focus.requestFocus();
+  }
+
+  void _quote(String text) {
+    final quoted = text.split('\n').map((l) => '> $l').join('\n');
+    _input.text = '$quoted\n\n';
+    _input.selection = TextSelection.collapsed(offset: _input.text.length);
+    _focus.requestFocus();
   }
 }
 
@@ -437,6 +530,7 @@ class _InputBar extends StatelessWidget {
     required this.running,
     required this.onSend,
     required this.onAbort,
+    this.onAttach,
   });
 
   final TextEditingController controller;
@@ -444,6 +538,7 @@ class _InputBar extends StatelessWidget {
   final bool running;
   final Future<void> Function() onSend;
   final Future<void> Function() onAbort;
+  final VoidCallback? onAttach;
 
   @override
   Widget build(BuildContext context) {
@@ -465,6 +560,24 @@ class _InputBar extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              if (onAttach != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4, right: 4),
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.add_circle_outline,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    onPressed: onAttach,
+                    tooltip: 'Add attachment',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
+                ),
               Expanded(
                 child: TextField(
                   controller: controller,
@@ -691,4 +804,53 @@ List<GatewayCommandView> _fallbackCommands(String agentId) {
       ],
     _ => const <GatewayCommandView>[],
   };
+}
+
+class _ScrollToBottomButton extends StatelessWidget {
+  const _ScrollToBottomButton({
+    required this.hasNew,
+    required this.onPressed,
+  });
+
+  final bool hasNew;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 3,
+      shadowColor: scheme.shadow.withValues(alpha: 0.2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.keyboard_arrow_down,
+                size: 18,
+                color: scheme.onSurface,
+              ),
+              if (hasNew) ...[
+                const SizedBox(width: 4),
+                Text(
+                  'New',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

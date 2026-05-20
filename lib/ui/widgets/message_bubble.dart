@@ -14,9 +14,15 @@ class MessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     this.onDelete,
+    this.onResend,
+    this.onEditResend,
+    this.onQuote,
   });
   final Message message;
   final VoidCallback? onDelete;
+  final ValueChanged<String>? onResend;
+  final ValueChanged<String>? onEditResend;
+  final ValueChanged<String>? onQuote;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +135,9 @@ class MessageBubble extends StatelessWidget {
   }
 
   void _showContextMenu(BuildContext context) {
+    HapticFeedback.lightImpact();
+    final isUser = message.role == MessageRole.user;
+    final text = _plainText();
     showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -139,7 +148,7 @@ class MessageBubble extends StatelessWidget {
               leading: const Icon(Icons.copy),
               title: const Text('Copy text'),
               onTap: () {
-                Clipboard.setData(ClipboardData(text: _plainText()));
+                Clipboard.setData(ClipboardData(text: text));
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -149,6 +158,33 @@ class MessageBubble extends StatelessWidget {
                 );
               },
             ),
+            if (isUser && onResend != null)
+              ListTile(
+                leading: const Icon(Icons.replay),
+                title: const Text('Resend'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onResend!(text);
+                },
+              ),
+            if (isUser && onEditResend != null)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit & resend'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onEditResend!(text);
+                },
+              ),
+            if (!isUser && onQuote != null)
+              ListTile(
+                leading: const Icon(Icons.format_quote_outlined),
+                title: const Text('Quote'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onQuote!(text);
+                },
+              ),
             if (onDelete != null)
               ListTile(
                 leading: Icon(

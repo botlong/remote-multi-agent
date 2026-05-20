@@ -27,7 +27,10 @@ class SessionStatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(spec.icon, size: compact ? 11 : 13, color: spec.color),
+          if (normalized == 'running')
+            _PulsingDot(color: spec.color, size: compact ? 8 : 10)
+          else
+            Icon(spec.icon, size: compact ? 11 : 13, color: spec.color),
           const SizedBox(width: 4),
           Text(
             spec.label,
@@ -38,6 +41,55 @@ class SessionStatusChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Animated pulsing dot for running state.
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot({required this.color, required this.size});
+  final Color color;
+  final double size;
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _anim = Tween(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Container(
+        width: widget.size,
+        height: widget.size,
+        decoration: BoxDecoration(
+          color: widget.color.withValues(alpha: _anim.value),
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }
@@ -55,38 +107,32 @@ class _StatusSpec {
   final Color color;
 
   static _StatusSpec forStatus(String status, ThemeData theme) {
-    switch (status) {
-      case 'running':
-        return _StatusSpec(
+    return switch (status) {
+      'running' => _StatusSpec(
           label: 'Running',
           icon: Icons.play_arrow,
-          color: theme.colorScheme.primary,
-        );
-      case 'waiting-for-approval':
-        return const _StatusSpec(
+          color: theme.colorScheme.onSurface,
+        ),
+      'waiting-for-approval' => _StatusSpec(
           label: 'Approval',
           icon: Icons.rule,
-          color: Color(0xFF8A5B00),
-        );
-      case 'error':
-        return _StatusSpec(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      'error' => _StatusSpec(
           label: 'Error',
           icon: Icons.error_outline,
           color: theme.colorScheme.error,
-        );
-      case 'completed':
-        return const _StatusSpec(
+        ),
+      'completed' => const _StatusSpec(
           label: 'Done',
           icon: Icons.check_circle_outline,
-          color: Color(0xFF2E7D32),
-        );
-      case 'idle':
-      default:
-        return _StatusSpec(
+          color: Color(0xFF4CAF50),
+        ),
+      _ => _StatusSpec(
           label: 'Idle',
           icon: Icons.circle_outlined,
           color: theme.colorScheme.onSurfaceVariant,
-        );
-    }
+        ),
+    };
   }
 }

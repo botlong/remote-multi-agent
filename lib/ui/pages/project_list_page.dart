@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../state/gateway_providers.dart';
 import '../../state/settings_store.dart';
 import '../widgets/directory_picker.dart';
+import '../widgets/shimmer_skeleton.dart';
 import 'gateway_ui_adapters.dart';
 import 'project_detail_page.dart';
 import 'search_page.dart';
@@ -101,7 +102,7 @@ class _ProjectListBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading && projects.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const ShimmerList();
     }
     if (error != null && projects.isEmpty) {
       return _ErrorEmpty(error: error!);
