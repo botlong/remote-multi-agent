@@ -31,7 +31,7 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
       session.status = 'idle';
     }
   }
-  for (const messages of Object.values(store.data.messages || {})) {
+  for (const messages of Object.values(store.data.messagesBySession || {})) {
     if (!Array.isArray(messages)) continue;
     for (const msg of messages) {
       if (msg && msg.status === 'running') {

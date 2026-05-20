@@ -109,12 +109,16 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         final message = Message.fromJson(json);
         if (message.id.isEmpty) continue;
         final existing = next[message.id];
-        // Prefer whichever has more parts (SSE-deltas may have built up
-        // a richer in-memory message than what REST returns).
-        if (existing == null ||
-            (message.parts.length > existing.parts.length)) {
+        if (existing == null) {
           next[message.id] = message;
+          continue;
         }
+        // Prefer richer SSE-built parts, but always accept REST metadata so a
+        // reconnect can move stale running messages to completed/error.
+        final parts = message.parts.length > existing.parts.length
+            ? message.parts
+            : existing.parts;
+        next[message.id] = message.copyWith(parts: parts);
       }
       state = state.copyWith(
         session: state.session ?? session,
