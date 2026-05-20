@@ -330,11 +330,18 @@ class _ModelPicker extends StatelessWidget {
     );
   }
 
+  /// Extract real provider from model ID (e.g. "anthropic/claude-4" → "anthropic").
+  /// Falls back to agentId if no slash separator found.
+  String _providerOf(String modelId) {
+    final slash = modelId.indexOf('/');
+    return slash > 0 ? modelId.substring(0, slash) : agentId;
+  }
+
   Future<void> _open(BuildContext context) async {
     final choices = [
       for (final model in models)
         (
-          providerId: agentId,
+          providerId: _providerOf(model.id),
           modelId: model.id,
           label:
               model.displayName.trim().isEmpty ? model.id : model.displayName,
@@ -346,7 +353,7 @@ class _ModelPicker extends StatelessWidget {
       selected: selected == null
           ? null
           : (
-              providerId: agentId,
+              providerId: _providerOf(selected!.id),
               modelId: selected!.id,
               label: selected!.displayName.trim().isEmpty
                   ? selected!.id

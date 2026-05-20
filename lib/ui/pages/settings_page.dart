@@ -78,11 +78,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         final agentModelList = await client.listAgentModels(agent.id);
         final choices = agentModelList
             .map(
-              (model) => (
-                providerId: agent.id,
-                modelId: model.id,
-                label: '${agent.displayName} / ${model.displayName}',
-              ),
+              (model) {
+                final slash = model.id.indexOf('/');
+                final provider = slash > 0 ? model.id.substring(0, slash) : agent.id;
+                return (
+                  providerId: provider,
+                  modelId: model.id,
+                  label: model.displayName.trim().isEmpty
+                      ? model.id
+                      : model.displayName,
+                );
+              },
             )
             .toList();
         models.addAll(choices);

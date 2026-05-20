@@ -253,11 +253,58 @@ class ClaudeCodeAdapter {
   }
 
   async models() {
-    return (process.env.CLAUDE_CODE_MODELS || '')
+    // 1. Explicit env var override
+    const envModels = (process.env.CLAUDE_CODE_MODELS || '')
       .split(',')
       .map((value) => value.trim())
-      .filter(Boolean)
-      .map((id) => ({ id, displayName: id, raw: { id } }));
+      .filter(Boolean);
+    if (envModels.length > 0) {
+      return envModels.map((id) => ({ id, displayName: id, raw: { id } }));
+    }
+
+    // 2. Try fetching from Anthropic API
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (apiKey) {
+      try {
+        const baseUrl = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
+        const res = await fetch(`${baseUrl}/v1/models`, {
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.ok) {
+          const body = await res.json();
+          const models = (body.data || [])
+            .filter((m) => m.id && /claude/i.test(m.id))
+            .sort((a, b) => {
+              // Newest first (by created_at if available)
+              const ca = a.created_at || '';
+              const cb = b.created_at || '';
+              return cb.localeCompare(ca);
+            })
+            .map((m) => ({
+              id: m.id,
+              displayName: m.display_name || m.id,
+              raw: m,
+            }));
+          if (models.length > 0) return models;
+        }
+      } catch (err) {
+        console.warn(`[claude-code] Failed to fetch models from API: ${err.message}`);
+      }
+    }
+
+    // 3. Fallback defaults
+    const defaults = [
+      'claude-sonnet-4-20250514',
+      'claude-opus-4-20250514',
+      'claude-3-7-sonnet-20250219',
+      'claude-3-5-sonnet-20241022',
+      'claude-3-5-haiku-20241022',
+    ];
+    return defaults.map((id) => ({ id, displayName: id, raw: { id } }));
   }
 
   async commands(projectDirectory) {
@@ -561,22 +608,29 @@ class OpenCodeAdapter {
 
 function providerModels(payload) {
   const all = Array.isArray(payload?.all) ? payload.all : [];
-  const out = [];
+  const configured = [];
+  const unconfigured = [];
   for (const provider of all) {
     if (!provider || typeof provider !== 'object') continue;
     const providerId = provider.id || provider.providerID;
     if (!providerId) continue;
     const providerName = provider.name || providerId;
     const models = provider.models || {};
+    // A provider is "configured" if it has an API key or env set
+    const isConfigured = Boolean(
+      provider.configured || provider.apiKey || provider.api_key || provider.env,
+    );
+    const target = isConfigured ? configured : unconfigured;
     for (const [modelId, model] of Object.entries(models)) {
-      out.push({
+      target.push({
         id: `${providerId}/${modelId}`,
         displayName: `${providerName} / ${model?.name || modelId}`,
         raw: compactOpenCodeModel(providerId, modelId, model),
       });
     }
   }
-  return out;
+  // Configured providers first, then unconfigured
+  return [...configured, ...unconfigured];
 }
 
 function compactOpenCodeModel(providerId, modelId, model) {
