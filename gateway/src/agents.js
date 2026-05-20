@@ -195,6 +195,7 @@ class CodexAdapter {
       args,
       cwd: session.directory,
       stdin: prompt,
+      keepStdinOpen: true,
       agentId: this.id,
       onEvent,
       onText,
@@ -267,6 +268,18 @@ class ClaudeCodeAdapter {
   }
 
   run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
+    return this._runOnce({
+      session,
+      prompt,
+      withResume: Boolean(session.agentSessionId),
+      onEvent,
+      onText,
+      onAgentSessionId,
+      onExit,
+    });
+  }
+
+  _runOnce({ session, prompt, withResume, onEvent, onText, onAgentSessionId, onExit }) {
     const args = [
       '-p',
       '--output-format',
@@ -279,9 +292,39 @@ class ClaudeCodeAdapter {
       args.push('--permission-mode', permissionMode);
     }
     if (session.modelId) args.push('--model', session.modelId);
-    if (session.agentSessionId) args.push('--resume', session.agentSessionId);
+    if (withResume && session.agentSessionId) {
+      args.push('--resume', session.agentSessionId);
+    }
     args.push(prompt);
-    return runJsonCli({
+
+    let retried = false;
+    const handle = {};
+    const wrappedExit = (result) => {
+      // Detect stale --resume: Claude says "No conversation found".
+      const stale = withResume &&
+        !retried &&
+        typeof result.error === 'string' &&
+        /no conversation found/i.test(result.error);
+      if (stale) {
+        retried = true;
+        console.log(`[claude] stale resume id ${session.agentSessionId} - retrying fresh`);
+        session.agentSessionId = null;
+        const retryHandle = this._runOnce({
+          session,
+          prompt,
+          withResume: false,
+          onEvent,
+          onText,
+          onAgentSessionId,
+          onExit,
+        });
+        Object.assign(handle, retryHandle);
+        return;
+      }
+      onExit(result);
+    };
+
+    const inner = runJsonCli({
       command: this.command,
       args,
       cwd: session.directory,
@@ -290,8 +333,10 @@ class ClaudeCodeAdapter {
       onEvent,
       onText,
       onAgentSessionId,
-      onExit,
+      onExit: wrappedExit,
     });
+    Object.assign(handle, inner);
+    return handle;
   }
 }
 
@@ -677,6 +722,7 @@ function runJsonCli({
   args,
   cwd,
   stdin,
+  keepStdinOpen = false,
   agentId,
   onEvent,
   onText,
@@ -742,6 +788,13 @@ function runJsonCli({
   });
   if (stdin !== null && stdin !== undefined) {
     child.stdin.write(stdin + '\n');
+  }
+  // Close stdin unless the adapter wants to keep it open for later injection
+  // (e.g. Codex which reads more lines from stdin as the user types).
+  // Otherwise CLIs like Claude/OpenCode wait for EOF and emit
+  // 'no stdin data received in 3s' warnings.
+  if (!keepStdinOpen && child.stdin.writable) {
+    child.stdin.end();
   }
   let settled = false;
   const finish = (result) => {
@@ -1037,4 +1090,5 @@ module.exports = {
   buildCodexArgs,
   OpenCodeAdapter,
   normalizeOpenCodeEvent,
+  runJsonCli,
 };
