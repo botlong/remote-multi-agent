@@ -26,6 +26,9 @@ class Agent {
 
   factory Agent.fromJson(Map<String, dynamic> json) {
     final commands = json['commands'] as List<dynamic>? ?? const <dynamic>[];
+    final raw = json['raw'] is Map
+        ? (json['raw'] as Map).cast<String, dynamic>()
+        : const <String, dynamic>{};
     return Agent(
       id: json['id'] as String? ?? '',
       displayName:
@@ -39,7 +42,10 @@ class Agent {
           .whereType<Map<String, dynamic>>()
           .map(AgentCommand.fromJson)
           .toList(growable: false),
-      raw: Map<String, dynamic>.from(json),
+      raw: <String, dynamic>{
+        ...json,
+        ...raw,
+      },
     );
   }
 }
