@@ -39,10 +39,12 @@ List<_FileDiff> _parseDiff(String raw) {
 
   void flush() {
     if (currentPath.isNotEmpty || currentLines.isNotEmpty) {
-      files.add(_FileDiff(
-        path: currentPath.isEmpty ? 'unknown' : currentPath,
-        lines: List.unmodifiable(currentLines),
-      ));
+      files.add(
+        _FileDiff(
+          path: currentPath.isEmpty ? 'unknown' : currentPath,
+          lines: List.unmodifiable(currentLines),
+        ),
+      );
     }
   }
 
@@ -73,24 +75,30 @@ List<_FileDiff> _parseDiff(String raw) {
       }
       currentLines.add(_DiffLine(text: line, kind: _LineKind.hunk));
     } else if (line.startsWith('+')) {
-      currentLines.add(_DiffLine(
-        text: line,
-        kind: _LineKind.add,
-        newNo: newLine++,
-      ));
+      currentLines.add(
+        _DiffLine(
+          text: line,
+          kind: _LineKind.add,
+          newNo: newLine++,
+        ),
+      );
     } else if (line.startsWith('-')) {
-      currentLines.add(_DiffLine(
-        text: line,
-        kind: _LineKind.del,
-        oldNo: oldLine++,
-      ));
+      currentLines.add(
+        _DiffLine(
+          text: line,
+          kind: _LineKind.del,
+          oldNo: oldLine++,
+        ),
+      );
     } else {
-      currentLines.add(_DiffLine(
-        text: line,
-        kind: _LineKind.context,
-        oldNo: oldLine++,
-        newNo: newLine++,
-      ));
+      currentLines.add(
+        _DiffLine(
+          text: line,
+          kind: _LineKind.context,
+          oldNo: oldLine++,
+          newNo: newLine++,
+        ),
+      );
     }
   }
   flush();
@@ -144,9 +152,6 @@ class _DiffPageState extends ConsumerState<DiffPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Changes'),
