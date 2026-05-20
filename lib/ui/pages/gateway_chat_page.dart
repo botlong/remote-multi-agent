@@ -156,14 +156,15 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
           ),
         ),
       ),
-      body: Builder(builder: (context) {
-        // Track new messages arriving while scrolled away
-        if (messages.length > _lastMessageCount && _isScrolledAway) {
-          _hasNewWhileAway = true;
-        }
-        _lastMessageCount = messages.length;
+      body: Builder(
+        builder: (context) {
+          // Track new messages arriving while scrolled away
+          if (messages.length > _lastMessageCount && _isScrolledAway) {
+            _hasNewWhileAway = true;
+          }
+          _lastMessageCount = messages.length;
 
-        return Column(
+          return Column(
         children: [
           Expanded(
             child: Stack(
@@ -252,7 +253,8 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
           ),
         ],
       );
-      }),
+        },
+      ),
     );
   }
 

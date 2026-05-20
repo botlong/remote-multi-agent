@@ -193,8 +193,11 @@ class _EmptyView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle_outline, size: 48,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
+          Icon(
+            Icons.check_circle_outline,
+            size: 48,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
           const SizedBox(height: 12),
           Text(
             'No uncommitted changes',
@@ -231,9 +234,11 @@ class _ErrorView extends StatelessWidget {
           children: [
             Icon(Icons.error_outline, size: 40, color: scheme.error),
             const SizedBox(height: 12),
-            Text(error,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.error, fontSize: 13)),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.error, fontSize: 13),
+            ),
             const SizedBox(height: 16),
             TextButton.icon(
               onPressed: onRetry,
@@ -258,7 +263,6 @@ class _DiffContent extends StatelessWidget {
     final files = _parseDiff(diff);
     final totalAdd = files.fold<int>(0, (s, f) => s + f.additions);
     final totalDel = files.fold<int>(0, (s, f) => s + f.deletions);
-    final scheme = Theme.of(context).colorScheme;
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
@@ -305,8 +309,11 @@ class _SummaryBar extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.insert_drive_file_outlined,
-                size: 14, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.insert_drive_file_outlined,
+              size: 14,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 6),
             Text(
               '$fileCount file${fileCount == 1 ? '' : 's'} changed',
@@ -413,31 +420,37 @@ class _FileDiffCardState extends State<_FileDiffCard> {
                     color: scheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 6),
-                  Icon(Icons.insert_drive_file_outlined,
-                      size: 13, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.insert_drive_file_outlined,
+                    size: 13,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text.rich(
-                      TextSpan(children: [
-                        if (_dirPath.isNotEmpty)
+                      TextSpan(
+                        children: [
+                          if (_dirPath.isNotEmpty)
+                            TextSpan(
+                              text: _dirPath,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant
+                                    .withValues(alpha: 0.6),
+                              ),
+                            ),
                           TextSpan(
-                            text: _dirPath,
+                            text: _fileName,
                             style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 12,
-                              color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurface,
                             ),
                           ),
-                        TextSpan(
-                          text: _fileName,
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurface,
-                          ),
-                        ),
-                      ]),
+                        ],
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -473,7 +486,6 @@ class _DiffBar extends StatelessWidget {
     if (total == 0) return const SizedBox.shrink();
     const blocks = 5;
     final addBlocks = total == 0 ? 0 : (additions * blocks / total).round();
-    final delBlocks = blocks - addBlocks;
 
     return Row(
       mainAxisSize: MainAxisSize.min,

@@ -88,13 +88,6 @@ class _ToolPartViewState extends State<ToolPartView> {
     };
   }
 
-  IconData _statusIcon() => switch (widget.part.status) {
-        ToolStatus.pending => Icons.hourglass_empty,
-        ToolStatus.running => Icons.sync,
-        ToolStatus.completed => Icons.check_circle_outline,
-        ToolStatus.error => Icons.error_outline,
-      };
-
   // ─── Input field extraction ────────────────────────────────────────
 
   Map<String, dynamic> get _input {
@@ -143,7 +136,6 @@ class _ToolPartViewState extends State<ToolPartView> {
     final scheme = theme.colorScheme;
     final statusColor = _statusColor(context);
     final primary = _primaryInfo;
-    final output = widget.part.output;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
@@ -171,27 +163,29 @@ class _ToolPartViewState extends State<ToolPartView> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text.rich(
-                      TextSpan(children: [
-                        TextSpan(
-                          text: widget.part.tool,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                        if (primary != null) ...[
-                          const TextSpan(text: '  '),
+                      TextSpan(
+                        children: [
                           TextSpan(
-                            text: _truncate(primary, 60),
+                            text: widget.part.tool,
                             style: theme.textTheme.bodySmall?.copyWith(
                               fontFamily: 'monospace',
-                              fontSize: 11,
-                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
                             ),
                           ),
+                          if (primary != null) ...[
+                            const TextSpan(text: '  '),
+                            TextSpan(
+                              text: _truncate(primary, 60),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ],
-                      ]),
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -354,35 +348,42 @@ class _FilePathRow extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final parts = path.split(RegExp(r'[/\\]'));
     final fileName = parts.isNotEmpty ? parts.last : path;
-    final dir = parts.length > 1 ? parts.sublist(0, parts.length - 1).join('/') + '/' : '';
+    final dir = parts.length > 1
+        ? '${parts.sublist(0, parts.length - 1).join('/')}/'
+        : '';
 
     return Row(
       children: [
-        Icon(Icons.insert_drive_file_outlined,
-            size: 12, color: scheme.onSurfaceVariant),
+        Icon(
+          Icons.insert_drive_file_outlined,
+          size: 12,
+          color: scheme.onSurfaceVariant,
+        ),
         const SizedBox(width: 4),
         Flexible(
           child: Text.rich(
-            TextSpan(children: [
-              if (dir.isNotEmpty)
+            TextSpan(
+              children: [
+                if (dir.isNotEmpty)
+                  TextSpan(
+                    text: dir,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                  ),
                 TextSpan(
-                  text: dir,
+                  text: fileName,
                   style: TextStyle(
                     fontFamily: 'monospace',
                     fontSize: 11,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
                   ),
                 ),
-              TextSpan(
-                text: fileName,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurface,
-                ),
-              ),
-            ]),
+              ],
+            ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -399,7 +400,6 @@ class _TerminalBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
@@ -412,25 +412,27 @@ class _TerminalBlock extends StatelessWidget {
         children: [
           // Command line with $ prefix
           SelectableText.rich(
-            TextSpan(children: [
-              const TextSpan(
-                text: '\$ ',
-                style: TextStyle(
-                  color: Colors.green,
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+            TextSpan(
+              children: [
+                const TextSpan(
+                  text: '\$ ',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              TextSpan(
-                text: command,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontFamily: 'monospace',
-                  fontSize: 11,
+                TextSpan(
+                  text: command,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  ),
                 ),
-              ),
-            ]),
+              ],
+            ),
           ),
           // Output
           if (output != null && output!.trim().isNotEmpty) ...[

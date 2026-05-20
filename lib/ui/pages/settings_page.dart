@@ -185,7 +185,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           // ── Connection section ──────────────────────────────────────────
-          _SectionHeader(title: 'Connection', icon: Icons.dns_outlined),
+          const _SectionHeader(title: 'Connection', icon: Icons.dns_outlined),
           const SizedBox(height: 10),
           TextField(
             controller: _baseUrlCtrl,
@@ -255,8 +255,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.error_outline,
-                          color: theme.colorScheme.error, size: 16),
+                      Icon(
+                        Icons.error_outline,
+                        color: theme.colorScheme.error,
+                        size: 16,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         'Failed',
@@ -283,7 +286,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           // ── Agents & Models section ────────────────────────────────────
           if (_agents.isNotEmpty) ...[
             const SizedBox(height: 28),
-            _SectionHeader(title: 'Agents & Models', icon: Icons.smart_toy_outlined),
+            const _SectionHeader(
+              title: 'Agents & Models',
+              icon: Icons.smart_toy_outlined,
+            ),
             const SizedBox(height: 10),
             for (final agent in _agents)
               _AgentModelSection(
@@ -294,7 +300,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           // ── Default model section ──────────────────────────────────────
           if (_models.isNotEmpty) ...[
             const SizedBox(height: 28),
-            _SectionHeader(title: 'Default Model', icon: Icons.psychology_outlined),
+            const _SectionHeader(
+              title: 'Default Model',
+              icon: Icons.psychology_outlined,
+            ),
             const SizedBox(height: 10),
             _ModelTile(
               providerId: _providerId,
@@ -305,7 +314,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ],
           // ── Appearance section ─────────────────────────────────────────
           const SizedBox(height: 28),
-          _SectionHeader(title: 'Appearance', icon: Icons.palette_outlined),
+          const _SectionHeader(
+            title: 'Appearance',
+            icon: Icons.palette_outlined,
+          ),
           const SizedBox(height: 10),
           _ThemeSelector(
             current: ref.watch(settingsControllerProvider).themeMode,
