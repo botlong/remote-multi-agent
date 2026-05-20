@@ -104,22 +104,12 @@ class FileListClient {
 }
 
 // ---------------------------------------------------------------------------
-// Riverpod provider for the file client
+// Riverpod provider for the file client — uses gateway URL from settings.
 // ---------------------------------------------------------------------------
 
-/// The QQBot server URL. Defaults to the same host as the OpenCode server
-/// but on port 8787.
-final _qqbotUrlProvider = Provider<String>((ref) {
-  final settings = ref.watch(settingsControllerProvider);
-  // Derive QQBot URL from OpenCode base URL — same host, port 8787.
-  final uri = Uri.tryParse(settings.baseUrl);
-  if (uri == null) return 'http://127.0.0.1:8787';
-  return '${uri.scheme}://${uri.host}:8787';
-});
-
 final fileListClientProvider = Provider<FileListClient>((ref) {
-  final url = ref.watch(_qqbotUrlProvider);
-  final client = FileListClient(qqbotBaseUrl: url);
+  final settings = ref.watch(settingsControllerProvider);
+  final client = FileListClient(qqbotBaseUrl: settings.baseUrl);
   ref.onDispose(client.close);
   return client;
 });

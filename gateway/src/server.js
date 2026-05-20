@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 
 const { AgentRegistry } = require('./agents');
 const { EventBus, makeEvent } = require('./events');
+const { handleGit, handleFiles } = require('./fs_routes');
 const {
   JsonStore,
   appendTextToMessage,
@@ -151,6 +152,19 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
           if (results.length >= 50) break;
         }
         return sendJson(response, results);
+      }
+
+      // Git operations: /git/status, /git/diff, /git/commit, /git/pull, /git/push
+      if (url.pathname.startsWith('/git/')) {
+        const body = request.method === 'POST' ? await readJson(request) : null;
+        const result = await handleGit(request.method, url.pathname, url.searchParams, body);
+        if (result) return sendJson(response, result.data, result.status);
+      }
+
+      // File operations: /files, /files/read
+      if (url.pathname === '/files' || url.pathname === '/files/read') {
+        const result = await handleFiles(request.method, url.pathname, url.searchParams);
+        if (result) return sendJson(response, result.data, result.status);
       }
 
       throw httpError(404, 'not found');

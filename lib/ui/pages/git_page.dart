@@ -13,23 +13,13 @@ import '../../state/codex_thread_store.dart';
 import '../../state/settings_store.dart';
 
 // ---------------------------------------------------------------------------
-// Provider for GitClient — uses QQBot server URL from settings.
-// For now we derive it: same host as OpenCode but port 8787.
-// TODO: add a dedicated qqBotUrl field to AppSettings when needed.
+// Provider for GitClient — uses gateway URL from settings.
 // ---------------------------------------------------------------------------
 
-final _qqBotUrlProvider = Provider<String>((ref) {
-  final s = ref.watch(settingsControllerProvider);
-  // Default QQBot server: same host, port 8787
-  final openCodeUri = Uri.parse(s.baseUrl);
-  return 'http://${openCodeUri.host}:8787';
-});
-
 final gitClientProvider = Provider<GitClient>((ref) {
-  final url = ref.watch(_qqBotUrlProvider);
   final s = ref.watch(settingsControllerProvider);
   final client = GitClient(
-    baseUrl: Uri.parse(url),
+    baseUrl: Uri.parse(s.baseUrl),
     bearerToken: s.bearerToken,
   );
   ref.onDispose(client.close);
