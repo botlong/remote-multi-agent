@@ -14,7 +14,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/session.dart';
-import '../../state/codex_thread_store.dart';
 import '../../state/project_store.dart';
 import '../../state/settings_store.dart';
 
@@ -137,20 +136,6 @@ class _FilesPageState extends ConsumerState<FilesPage> {
 
   Session? get _session {
     if (widget.session != null) return widget.session;
-    // Codex backend: synthesize a Session from the most recent thread.
-    final list = ref.read(codexThreadListProvider).items;
-    if (list.isNotEmpty) {
-      final t = list.first;
-      return Session(
-        id: t.threadId ?? t.localKey,
-        slug: t.localKey,
-        title: t.title,
-        directory: t.directory,
-        createdAtMs: t.createdAtMs,
-        updatedAtMs: t.updatedAtMs,
-      );
-    }
-    // Fallback: use selected gateway project directory.
     final projectState = ref.read(projectStoreProvider);
     final project = projectState.selectedProjectId != null
         ? projectState.projects

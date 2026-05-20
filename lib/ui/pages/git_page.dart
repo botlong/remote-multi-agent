@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/git_client.dart';
-import '../../state/codex_thread_store.dart';
 import '../../state/project_store.dart';
 import '../../state/settings_store.dart';
 
@@ -50,14 +49,6 @@ class _GitPageState extends ConsumerState<GitPage> {
   String? _actionResult;
 
   String get _directory {
-    // 1. Try Codex thread directory
-    final threads = ref.read(codexThreadListProvider).items;
-    if (widget.sessionId != null) {
-      final match = threads.where((t) => t.localKey == widget.sessionId);
-      if (match.isNotEmpty) return match.first.directory;
-    }
-    if (threads.isNotEmpty) return threads.first.directory;
-    // 2. Fallback to selected gateway project directory
     final projectState = ref.read(projectStoreProvider);
     if (projectState.selectedProjectId != null) {
       final project = projectState.projects
