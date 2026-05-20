@@ -1,7 +1,7 @@
 /// Git tab page — shows git status and diff for the current session's
 /// working directory, with action buttons for commit/pull/push.
 ///
-/// Connects to the QQBot server's `/git/*` endpoints.
+/// Connects to the gateway's `/git/*` endpoints.
 library;
 
 import 'package:dio/dio.dart';
@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/git_client.dart';
 import '../../state/codex_thread_store.dart';
+import '../../state/project_store.dart';
 import '../../state/settings_store.dart';
 
 // ---------------------------------------------------------------------------
@@ -49,12 +50,26 @@ class _GitPageState extends ConsumerState<GitPage> {
   String? _actionResult;
 
   String get _directory {
+    // 1. Try Codex thread directory
     final threads = ref.read(codexThreadListProvider).items;
     if (widget.sessionId != null) {
       final match = threads.where((t) => t.localKey == widget.sessionId);
       if (match.isNotEmpty) return match.first.directory;
     }
     if (threads.isNotEmpty) return threads.first.directory;
+    // 2. Fallback to selected gateway project directory
+    final projectState = ref.read(projectStoreProvider);
+    if (projectState.selectedProjectId != null) {
+      final project = projectState.projects
+          .where((p) => p.id == projectState.selectedProjectId)
+          .firstOrNull;
+      if (project != null && project.directory.isNotEmpty) {
+        return project.directory;
+      }
+    }
+    if (projectState.projects.isNotEmpty) {
+      return projectState.projects.first.directory;
+    }
     return '';
   }
 

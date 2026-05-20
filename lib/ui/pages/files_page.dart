@@ -2,8 +2,8 @@
 
 /// File tree browser for the current session's working directory.
 ///
-/// Shows a recursive file/folder tree fetched from the QQBot server endpoint:
-///   GET http://<qqbot-url>/files?path=<directory>
+/// Shows a recursive file/folder tree fetched from the gateway endpoint:
+///   GET http://<gateway-url>/files?path=<directory>
 ///
 /// Tapping a file navigates to [FileViewerPage] which displays the content
 /// with basic syntax highlighting.
@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/session.dart';
 import '../../state/codex_thread_store.dart';
+import '../../state/project_store.dart';
 import '../../state/settings_store.dart';
 
 // ---------------------------------------------------------------------------
@@ -136,19 +137,37 @@ class _FilesPageState extends ConsumerState<FilesPage> {
 
   Session? get _session {
     if (widget.session != null) return widget.session;
-    // Codex backend: synthesize a Session from the most recent thread so
-    // the existing _DirectoryHeader / FileViewerPage signatures still work.
+    // Codex backend: synthesize a Session from the most recent thread.
     final list = ref.read(codexThreadListProvider).items;
-    if (list.isEmpty) return null;
-    final t = list.first;
-    return Session(
-      id: t.threadId ?? t.localKey,
-      slug: t.localKey,
-      title: t.title,
-      directory: t.directory,
-      createdAtMs: t.createdAtMs,
-      updatedAtMs: t.updatedAtMs,
-    );
+    if (list.isNotEmpty) {
+      final t = list.first;
+      return Session(
+        id: t.threadId ?? t.localKey,
+        slug: t.localKey,
+        title: t.title,
+        directory: t.directory,
+        createdAtMs: t.createdAtMs,
+        updatedAtMs: t.updatedAtMs,
+      );
+    }
+    // Fallback: use selected gateway project directory.
+    final projectState = ref.read(projectStoreProvider);
+    final project = projectState.selectedProjectId != null
+        ? projectState.projects
+            .where((p) => p.id == projectState.selectedProjectId)
+            .firstOrNull
+        : projectState.projects.firstOrNull;
+    if (project != null && project.directory.isNotEmpty) {
+      return Session(
+        id: project.id,
+        slug: project.name,
+        title: project.name,
+        directory: project.directory,
+        createdAtMs: project.updatedAtMs,
+        updatedAtMs: project.updatedAtMs,
+      );
+    }
+    return null;
   }
 
   @override
