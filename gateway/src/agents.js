@@ -190,12 +190,13 @@ class CodexAdapter {
 
   run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
     const args = buildCodexArgs(session);
+    // Codex `exec ... -` reads the prompt from stdin until EOF; keeping
+    // stdin open would block codex from starting work.
     return runJsonCli({
       command: this.command,
       args,
       cwd: session.directory,
       stdin: prompt,
-      keepStdinOpen: true,
       agentId: this.id,
       onEvent,
       onText,

@@ -272,6 +272,7 @@ async function handleSessions({
       await adapter.deleteSession(session).catch(() => false);
     }
     await store.deleteSession(session.id);
+    bus.clearSession?.(session.id);
     return sendJson(response, { ok: true });
   }
 
