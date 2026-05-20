@@ -294,6 +294,34 @@ async function readCcSwitchClaudeProvider() {
   }
 }
 
+/**
+ * Read Claude official CLI settings from ~/.claude/settings.json.
+ * Returns { baseUrl, authToken } or null.
+ * Skips if the token is "PROXY_MANAGED" (managed by CC-Switch local proxy).
+ */
+async function readClaudeOfficialSettings() {
+  try {
+    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    let raw;
+    try {
+      raw = await fs.readFile(settingsPath, 'utf-8');
+    } catch {
+      return null;
+    }
+    const cfg = JSON.parse(raw);
+    const env = cfg && cfg.env ? cfg.env : {};
+    const authToken = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY;
+    if (!authToken || authToken === 'PROXY_MANAGED') return null;
+    const baseUrl = env.ANTHROPIC_BASE_URL;
+    // Skip local proxy URLs (CC-Switch proxy) — they don't support /v1/models
+    if (baseUrl && /127\.0\.0\.1|localhost/i.test(baseUrl)) return null;
+    return { authToken, baseUrl };
+  } catch (err) {
+    console.warn(`[claude-code] Official settings read failed: ${err.message}`);
+    return null;
+  }
+}
+
 class ClaudeCodeAdapter {
   constructor() {
     this.id = 'claude-code';
@@ -334,6 +362,7 @@ class ClaudeCodeAdapter {
     //      a) ANTHROPIC_API_KEY env (official)
     //      b) ANTHROPIC_AUTH_TOKEN env (CLI-style bearer)
     //      c) Active provider in CC-Switch DB (~/.cc-switch/cc-switch.db)
+    //      d) Official Claude settings (~/.claude/settings.json)
     let apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
     let baseUrl = process.env.ANTHROPIC_BASE_URL;
     if (!apiKey) {
@@ -341,6 +370,13 @@ class ClaudeCodeAdapter {
       if (ccs) {
         apiKey = ccs.authToken;
         if (!baseUrl) baseUrl = ccs.baseUrl;
+      }
+    }
+    if (!apiKey) {
+      const official = await readClaudeOfficialSettings();
+      if (official) {
+        apiKey = official.authToken;
+        if (!baseUrl) baseUrl = official.baseUrl;
       }
     }
     if (apiKey) {
