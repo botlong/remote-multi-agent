@@ -46,6 +46,10 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
   const registry = adapters || new AgentRegistry();
   const bus = new EventBus();
   const activeRuns = new Map();
+  // Per-session queue of follow-up turns: messages the user sent while the
+  // agent was busy that we couldn't inject (Codex/Claude one-shot CLIs).
+  // Drained in handleExit so the agent processes them sequentially.
+  const pendingTurns = new Map();
 
   const server = http.createServer(async (request, response) => {
     setCors(response);
@@ -109,6 +113,7 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
           registry,
           bus,
           activeRuns,
+          pendingTurns,
         });
       }
 
@@ -265,6 +270,7 @@ async function handleSessions({
   registry,
   bus,
   activeRuns,
+  pendingTurns,
 }) {
   const session = store.getSession(segments[1]);
   if (!session) throw httpError(404, 'session not found');
@@ -279,6 +285,7 @@ async function handleSessions({
     const run = activeRuns.get(session.id);
     if (run) run.abort();
     activeRuns.delete(session.id);
+    pendingTurns?.delete(session.id);
     const adapter = registry.get(session.agentId);
     if (adapter?.deleteSession) {
       await adapter.deleteSession(session).catch(() => false);
@@ -327,8 +334,17 @@ async function handleSessions({
           await adapter.injectMessage(session, text, parts);
           injected = true;
         }
-        console.log(`[inject] session=${session.id} agent=${session.agentId} injected=${injected} text=${text.slice(0,80)}`);
-        return sendJson(response, { accepted: true, injected, sessionId: session.id }, 202);
+        let queued = false;
+        if (!injected) {
+          // Codex/Claude can't accept mid-turn input. Queue the message so
+          // it runs as the next turn instead of being lost.
+          const queue = pendingTurns.get(session.id) || [];
+          queue.push({ text, parts });
+          pendingTurns.set(session.id, queue);
+          queued = true;
+        }
+        console.log(`[inject] session=${session.id} agent=${session.agentId} injected=${injected} queued=${queued} text=${text.slice(0,80)}`);
+        return sendJson(response, { accepted: true, injected, queued, sessionId: session.id }, 202);
       }
       await startTurn({
         session,
@@ -338,6 +354,7 @@ async function handleSessions({
         registry,
         bus,
         activeRuns,
+        pendingTurns,
       });
       return sendJson(response, { accepted: true, sessionId: session.id }, 202);
     }
@@ -356,6 +373,7 @@ async function handleSessions({
     const run = activeRuns.get(session.id);
     if (run) run.abort();
     activeRuns.delete(session.id);
+    pendingTurns?.delete(session.id);
     const adapter = registry.get(session.agentId);
     if (!run && adapter?.abort) {
       await adapter.abort(session).catch(() => false);
@@ -440,7 +458,7 @@ async function handleSessions({
   throw httpError(404, 'not found');
 }
 
-async function startTurn({ session, text, parts = [], store, registry, bus, activeRuns }) {
+async function startTurn({ session, text, parts = [], store, registry, bus, activeRuns, pendingTurns }) {
   if (activeRuns.has(session.id)) {
     throw httpError(409, 'session already running');
   }
@@ -628,6 +646,29 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
       );
     }
     emit(bus, 'session.updated', updated, { session: updated });
+
+    // Drain any follow-up messages the user queued during this turn.
+    const queue = pendingTurns && pendingTurns.get(session.id);
+    if (queue && queue.length > 0 && !aborted) {
+      const next = queue.shift();
+      if (queue.length === 0) pendingTurns.delete(session.id);
+      console.log(`[queue] draining session=${session.id} remaining=${queue.length}`);
+      const refreshed = store.getSession(session.id);
+      if (refreshed) {
+        startTurn({
+          session: refreshed,
+          text: next.text,
+          parts: next.parts,
+          store,
+          registry,
+          bus,
+          activeRuns,
+          pendingTurns,
+        }).catch((err) => {
+          console.error(`[queue] failed to start queued turn for ${session.id}:`, err.message);
+        });
+      }
+    }
   }
 }
 

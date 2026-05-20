@@ -142,6 +142,17 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     );
   }
 
+  /// Drop the current SSE subscription and create a new one. Call this when
+  /// the app resumes from background — the OS may have killed the underlying
+  /// socket without firing onDone, so we can't trust the existing stream.
+  Future<void> reconnect() async {
+    await _eventSub?.cancel();
+    _eventSub = null;
+    _bindEvents();
+    // Also re-pull state in case we missed events while backgrounded.
+    await _load();
+  }
+
   Future<void> sendMessage(
     String text, {
     List<Map<String, dynamic>> attachments = const [],

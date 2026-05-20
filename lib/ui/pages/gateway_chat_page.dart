@@ -25,7 +25,8 @@ class GatewayChatPage extends ConsumerStatefulWidget {
   ConsumerState<GatewayChatPage> createState() => _GatewayChatPageState();
 }
 
-class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
+class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
+    with WidgetsBindingObserver {
   final _input = TextEditingController();
   final _focus = FocusNode();
   final _scroll = ScrollController();
@@ -35,15 +36,27 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
   void initState() {
     super.initState();
     _input.addListener(_onInputChanged);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _input.removeListener(_onInputChanged);
     _input.dispose();
     _focus.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // OS may have killed the SSE socket while backgrounded; refresh it.
+      ref
+          .read(gatewayChatProvider(widget.session.id).notifier)
+          .reconnect();
+    }
   }
 
   void _onInputChanged() {
