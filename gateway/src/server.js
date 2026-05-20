@@ -367,6 +367,45 @@ async function handleSessions({
     return;
   }
 
+  // GET /sessions/:sessionId/export?format=markdown|json
+  if (segments.length === 3 && segments[2] === 'export' && request.method === 'GET') {
+    const format = url.searchParams.get('format') || 'markdown';
+    const messages = store.listMessages(session.id);
+    if (format === 'json') {
+      return sendJson(response, {
+        session: {
+          id: session.id,
+          title: session.title,
+          agentId: session.agentId,
+          directory: session.directory,
+          createdAt: session.createdAt,
+        },
+        messages,
+      });
+    }
+    // markdown
+    let md = `# ${session.title}\n\n`;
+    md += `**Agent:** ${session.agentId}  \n`;
+    md += `**Directory:** ${session.directory || '—'}  \n`;
+    md += `**Created:** ${session.createdAt || '—'}  \n\n---\n\n`;
+    for (const msg of messages) {
+      const role = (msg.role || 'unknown').toUpperCase();
+      md += `### ${role}\n\n`;
+      for (const part of msg.parts || []) {
+        if (part.type === 'text' && part.text) {
+          md += `${part.text}\n\n`;
+        } else if (part.type === 'tool') {
+          md += `> **Tool:** ${part.toolName || 'unknown'}`;
+          if (part.output) md += `\n> \`\`\`\n> ${part.output.slice(0, 500)}\n> \`\`\``;
+          md += '\n\n';
+        }
+      }
+    }
+    response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end(md);
+    return;
+  }
+
   // GET /sessions/:sessionId/diff  — git diff for this session's directory
   if (segments.length === 3 && segments[2] === 'diff' && request.method === 'GET') {
     const dir = session.directory;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/gateway_providers.dart';
@@ -75,6 +76,15 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
                 builder: (_) => DiffPage(sessionId: widget.session.id),
               ),
             ),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Export',
+            onSelected: (v) => _export(v),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'markdown', child: Text('Copy as Markdown')),
+              PopupMenuItem(value: 'json', child: Text('Copy as JSON')),
+            ],
           ),
         ],
         bottom: PreferredSize(
@@ -253,6 +263,30 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage> {
           SnackBar(content: Text('Delete failed: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _export(String format) async {
+    try {
+      final client = ref.read(gatewayClientProvider);
+      final content =
+          await client.exportSession(widget.session.id, format: format);
+      await Clipboard.setData(ClipboardData(text: content));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            format == 'json'
+                ? 'JSON copied to clipboard'
+                : 'Markdown copied to clipboard',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
     }
   }
 

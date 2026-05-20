@@ -195,6 +195,16 @@ class GatewayClient {
     return _readList(res.data);
   }
 
+  /// Export session as markdown or JSON string.
+  Future<String> exportSession(String sessionId, {String format = 'markdown'}) async {
+    final res = await _dio.get<dynamic>(
+      '/sessions/${_path(sessionId)}/export',
+      queryParameters: {'format': format},
+      options: Options(responseType: ResponseType.plain),
+    );
+    return res.data?.toString() ?? '';
+  }
+
   Future<Map<String, dynamic>> getSessionDiff(String sessionId) async {
     final res = await _dio.get<Map<String, dynamic>>(
       '/sessions/${_path(sessionId)}/diff',
