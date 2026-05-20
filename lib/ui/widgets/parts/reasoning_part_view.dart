@@ -18,41 +18,56 @@ class _ReasoningPartViewState extends State<ReasoningPartView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(8),
+        color: scheme.tertiaryContainer.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: scheme.tertiaryContainer.withValues(alpha: 0.3),
+        ),
       ),
       child: InkWell(
         onTap: () => setState(() => _expanded = !_expanded),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Icon(
+                    Icons.lightbulb_outline,
+                    size: 14,
+                    color: scheme.tertiary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Thinking',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: scheme.tertiary,
+                      ),
+                    ),
+                  ),
+                  Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
                     size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Thinking',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                 ],
               ),
               if (_expanded) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
                   widget.part.text,
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontStyle: FontStyle.italic,
+                    height: 1.5,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ],

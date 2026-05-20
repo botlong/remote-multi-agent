@@ -41,20 +41,30 @@ class ProjectDetailPage extends ConsumerWidget {
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(28),
+          preferredSize: const Size.fromHeight(32),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                project.directory,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.folder_outlined,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    project.directory,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -93,19 +103,36 @@ class _SessionGroups extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (grouped.isEmpty) {
+      final scheme = Theme.of(context).colorScheme;
       return ListView(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 80),
         children: [
-          Icon(
-            Icons.chat_bubble_outline,
-            size: 48,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer.withValues(alpha: 0.3),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.chat_bubble_outline,
+              size: 32,
+              color: scheme.primary,
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           Text(
-            'No conversations in this project.',
+            'No conversations yet',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Start a new conversation with\nany of your coding agents.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
           ),
         ],
       );
@@ -194,13 +221,22 @@ class _ModelSection extends ConsumerWidget {
                 .read(gatewaySessionStoreProvider(project.id).notifier)
                 .deleteSession(session.id),
             child: ListTile(
-              contentPadding: const EdgeInsets.only(left: 8, right: 0),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               title: Text(
                 session.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-              subtitle: Text(_relativeTime(session.updatedAtMs)),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  _relativeTime(session.updatedAtMs),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
               trailing: SessionStatusChip(status: session.status, compact: true),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(

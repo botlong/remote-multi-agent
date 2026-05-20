@@ -176,19 +176,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          Text(
-            'Connect to your agent gateway',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 16),
+          // ── Connection section ──────────────────────────────────────────
+          _SectionHeader(title: 'Connection', icon: Icons.dns_outlined),
+          const SizedBox(height: 10),
           TextField(
             controller: _baseUrlCtrl,
             decoration: const InputDecoration(
               labelText: 'Server URL',
               hintText: 'http://100.x.x.x:4096',
-              prefixIcon: Icon(Icons.dns_outlined),
+              prefixIcon: Icon(Icons.link),
             ),
             keyboardType: TextInputType.url,
             autocorrect: false,
@@ -198,12 +196,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             controller: _tokenCtrl,
             decoration: const InputDecoration(
               labelText: 'Bearer token (optional)',
-              prefixIcon: Icon(Icons.lock_outline),
+              prefixIcon: Icon(Icons.vpn_key_outlined),
             ),
             autocorrect: false,
             obscureText: true,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
               FilledButton.icon(
@@ -214,16 +212,56 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.bolt_outlined),
+                    : const Icon(Icons.bolt_outlined, size: 18),
                 label: Text(_testing ? 'Connecting...' : 'Test connection'),
               ),
               const SizedBox(width: 12),
               if (_testOk == true)
-                const Icon(Icons.check_circle, color: Colors.green),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      SizedBox(width: 4),
+                      Text(
+                        'Connected',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (_testOk == false)
-                Tooltip(
-                  message: _testError ?? '',
-                  child: const Icon(Icons.error, color: Colors.red),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error_outline,
+                          color: theme.colorScheme.error, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Failed',
+                        style: TextStyle(
+                          color: theme.colorScheme.error,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -231,25 +269,27 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             const SizedBox(height: 8),
             Text(
               _testError!,
-              style: TextStyle(color: theme.colorScheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
             ),
           ],
-          // --- Per-agent model sections ---
+          // ── Agents & Models section ────────────────────────────────────
           if (_agents.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Text('Agents & Models', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
+            const SizedBox(height: 28),
+            _SectionHeader(title: 'Agents & Models', icon: Icons.smart_toy_outlined),
+            const SizedBox(height: 10),
             for (final agent in _agents)
               _AgentModelSection(
                 agent: agent,
                 models: _agentModels[agent.id] ?? const [],
               ),
           ],
-          // --- Default model picker ---
+          // ── Default model section ──────────────────────────────────────
           if (_models.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Text('Default model', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
+            const SizedBox(height: 28),
+            _SectionHeader(title: 'Default Model', icon: Icons.psychology_outlined),
+            const SizedBox(height: 10),
             _ModelTile(
               providerId: _providerId,
               modelId: _modelId,
@@ -257,9 +297,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               onTap: _openModelPicker,
             ),
           ],
-          const SizedBox(height: 24),
-          Text('Appearance', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
+          // ── Appearance section ─────────────────────────────────────────
+          const SizedBox(height: 28),
+          _SectionHeader(title: 'Appearance', icon: Icons.palette_outlined),
+          const SizedBox(height: 10),
           _ThemeSelector(
             current: ref.watch(settingsControllerProvider).themeMode,
             onChanged: (mode) {
@@ -414,6 +455,30 @@ class _ModelTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, required this.icon});
+  final String title;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: scheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+      ],
     );
   }
 }

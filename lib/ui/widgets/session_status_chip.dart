@@ -21,19 +21,19 @@ class SessionStatusChip extends StatelessWidget {
         vertical: compact ? 3 : 5,
       ),
       decoration: BoxDecoration(
-        color: spec.color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        color: spec.color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(spec.icon, size: compact ? 12 : 14, color: spec.color),
-          const SizedBox(width: 5),
+          Icon(spec.icon, size: compact ? 11 : 13, color: spec.color),
+          const SizedBox(width: 4),
           Text(
             spec.label,
             style: TextStyle(
               color: spec.color,
-              fontSize: compact ? 11 : 12,
+              fontSize: compact ? 10 : 11,
               fontWeight: FontWeight.w700,
             ),
           ),

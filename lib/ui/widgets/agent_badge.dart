@@ -21,24 +21,24 @@ class AgentBadge extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,
-        vertical: compact ? 4 : 6,
+        vertical: compact ? 3 : 5,
       ),
       decoration: BoxDecoration(
-        color: spec.color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: spec.color.withValues(alpha: 0.28)),
+        color: spec.color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: spec.color.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(spec.icon, size: compact ? 14 : 16, color: spec.color),
-          const SizedBox(width: 6),
+          Icon(spec.icon, size: compact ? 13 : 15, color: spec.color),
+          const SizedBox(width: 5),
           Flexible(
             child: Text(
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium?.copyWith(
+              style: theme.textTheme.labelSmall?.copyWith(
                 color: spec.color,
                 fontWeight: FontWeight.w700,
               ),

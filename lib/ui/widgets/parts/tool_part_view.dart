@@ -73,18 +73,20 @@ class _ToolPartViewState extends State<ToolPartView> {
     final statusColor = _statusColor(context);
     final summary = _summary();
 
+    final scheme = theme.colorScheme;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        border: Border.all(color: statusColor.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(10),
+        color: statusColor.withValues(alpha: 0.04),
+        border: Border.all(color: statusColor.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -92,37 +94,66 @@ class _ToolPartViewState extends State<ToolPartView> {
                 children: [
                   Row(
                     children: [
-                      Icon(_statusIcon(), size: 16, color: statusColor),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.part.tool,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.w600,
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(
+                          _statusIcon(),
+                          size: 14,
+                          color: statusColor,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        widget.part.status.name,
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: statusColor),
+                      Expanded(
+                        child: Text(
+                          widget.part.tool,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
-                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          widget.part.status.name,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: statusColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
                       Icon(
                         _expanded ? Icons.expand_less : Icons.expand_more,
-                        size: 18,
+                        size: 16,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
                       ),
                     ],
                   ),
                   if (summary != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
                       summary,
                       maxLines: _expanded ? null : 2,
                       overflow: _expanded ? null : TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontFamily: 'monospace',
-                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -190,19 +221,24 @@ class _CodeBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(6),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.15),
+        ),
       ),
       child: SelectableText(
         text,
         style: TextStyle(
           fontFamily: 'monospace',
-          fontSize: 12,
-          color: color,
+          fontSize: 11,
+          height: 1.5,
+          color: color ?? scheme.onSurface.withValues(alpha: 0.85),
         ),
       ),
     );

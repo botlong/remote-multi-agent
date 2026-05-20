@@ -32,64 +32,81 @@ class MessageBubble extends StatelessWidget {
       partWidgets.add(const _TypingIndicator());
     }
 
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
       onLongPress: () => _showContextMenu(context),
       child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isUser) const _RoleAvatar(role: MessageRole.assistant),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment:
-                  isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isUser ? 16 : 4),
-                      bottomRight: Radius.circular(isUser ? 4 : 16),
+        padding: EdgeInsets.only(
+          top: 4,
+          bottom: 4,
+          left: isUser ? 40 : 0,
+          right: isUser ? 0 : 40,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isUser) ...[
+              const _RoleAvatar(role: MessageRole.assistant),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                    isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final w in partWidgets) ...[
-                        w,
-                        // No spacer below empty step parts
-                        if (w is! StepPartView) const SizedBox(height: 4),
+                    decoration: BoxDecoration(
+                      color: isUser
+                          ? scheme.primaryContainer.withValues(alpha: 0.7)
+                          : scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(isUser ? 18 : 4),
+                        bottomRight: Radius.circular(isUser ? 4 : 18),
+                      ),
+                      border: isUser
+                          ? null
+                          : Border.all(
+                              color: scheme.outlineVariant.withValues(alpha: 0.15),
+                            ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final w in partWidgets) ...[
+                          w,
+                          if (w is! StepPartView) const SizedBox(height: 4),
+                        ],
                       ],
-                    ],
-                  ),
-                ),
-                if (message.modelId != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                    child: Text(
-                      message.modelId!,
-                      style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ),
-              ],
+                  if (message.modelId != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3, left: 6, right: 6),
+                      child: Text(
+                        message.modelId!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                              fontSize: 10,
+                            ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            const _RoleAvatar(role: MessageRole.user),
+            if (isUser) ...[
+              const SizedBox(width: 8),
+              const _RoleAvatar(role: MessageRole.user),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
     );
   }
 
@@ -175,13 +192,19 @@ class _RoleAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isUser = role == MessageRole.user;
-    return CircleAvatar(
-      radius: 14,
-      backgroundColor: isUser ? scheme.primary : scheme.tertiary,
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: isUser
+            ? scheme.primary.withValues(alpha: 0.1)
+            : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Icon(
-        isUser ? Icons.person_outline : Icons.smart_toy_outlined,
-        size: 16,
-        color: isUser ? scheme.onPrimary : scheme.onTertiary,
+        isUser ? Icons.person : Icons.auto_awesome,
+        size: 14,
+        color: isUser ? scheme.primary : scheme.onSurfaceVariant,
       ),
     );
   }
@@ -194,13 +217,16 @@ class _TypingIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < 3; i++) ...[
-            if (i > 0) const SizedBox(width: 4),
-            _Dot(delay: Duration(milliseconds: i * 200), color: scheme.primary),
+            if (i > 0) const SizedBox(width: 5),
+            _Dot(
+              delay: Duration(milliseconds: i * 180),
+              color: scheme.primary.withValues(alpha: 0.7),
+            ),
           ],
         ],
       ),
@@ -246,14 +272,17 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _anim,
-      builder: (_, __) => Opacity(
-        opacity: 0.3 + 0.7 * _anim.value,
-        child: Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: widget.color,
-            shape: BoxShape.circle,
+      builder: (_, __) => Transform.translate(
+        offset: Offset(0, -2 * _anim.value),
+        child: Opacity(
+          opacity: 0.35 + 0.65 * _anim.value,
+          child: Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: widget.color,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
       ),
