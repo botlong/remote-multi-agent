@@ -162,10 +162,13 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
         if (result) return sendJson(response, result.data, result.status);
       }
 
-      // File operations: /files, /files/read
-      if (url.pathname === '/files' || url.pathname === '/files/read') {
+      // File operations: /files, /files/read, /files/raw
+      if (url.pathname === '/files' || url.pathname === '/files/read' || url.pathname === '/files/raw') {
         const result = await handleFiles(request.method, url.pathname, url.searchParams);
-        if (result) return sendJson(response, result.data, result.status);
+        if (result) {
+          if (result.body) return sendRaw(response, result.body, result.status, result.headers);
+          return sendJson(response, result.data, result.status);
+        }
       }
 
       throw httpError(404, 'not found');
@@ -759,6 +762,11 @@ function setCors(response) {
 function sendJson(response, data, status = 200) {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(data));
+}
+
+function sendRaw(response, body, status = 200, headers = {}) {
+  response.writeHead(status, headers);
+  response.end(body);
 }
 
 async function readJson(request) {

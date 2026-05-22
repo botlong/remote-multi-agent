@@ -32,6 +32,19 @@ class TokenUsage {
 }
 
 @immutable
+class TerminalLine {
+  const TerminalLine({
+    required this.stream,
+    required this.text,
+    required this.timestampMs,
+  });
+
+  final String stream;
+  final String text;
+  final int timestampMs;
+}
+
+@immutable
 class GatewayChatState {
   const GatewayChatState({
     required this.sessionId,
@@ -39,6 +52,7 @@ class GatewayChatState {
     required this.messages,
     required this.isStreaming,
     required this.connection,
+    required this.terminalLines,
     this.error,
     this.usage,
   });
@@ -48,6 +62,7 @@ class GatewayChatState {
   final Map<String, Message> messages;
   final bool isStreaming;
   final GatewayChatConnectionState connection;
+  final List<TerminalLine> terminalLines;
   final String? error;
   final TokenUsage? usage;
 
@@ -61,6 +76,7 @@ class GatewayChatState {
         messages: const {},
         isStreaming: false,
         connection: GatewayChatConnectionState.connecting,
+        terminalLines: const <TerminalLine>[],
       );
 
   GatewayChatState copyWith({
@@ -69,6 +85,7 @@ class GatewayChatState {
     Map<String, Message>? messages,
     bool? isStreaming,
     GatewayChatConnectionState? connection,
+    List<TerminalLine>? terminalLines,
     String? error,
     bool clearError = false,
     TokenUsage? usage,
@@ -79,6 +96,7 @@ class GatewayChatState {
         messages: messages ?? this.messages,
         isStreaming: isStreaming ?? this.isStreaming,
         connection: connection ?? this.connection,
+        terminalLines: terminalLines ?? this.terminalLines,
         error: clearError ? null : (error ?? this.error),
         usage: usage ?? this.usage,
       );
@@ -184,6 +202,20 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     state = state.copyWith(isStreaming: false);
   }
 
+  Future<void> handoff({
+    required String agentId,
+    String? prompt,
+    String? modelId,
+  }) async {
+    state = state.copyWith(isStreaming: true, clearError: true);
+    await _client.handoffSession(
+      sessionId: state.sessionId,
+      agentId: agentId,
+      prompt: prompt,
+      modelId: modelId,
+    );
+  }
+
   Future<void> deleteMessage(String messageId) async {
     await _client.deleteMessage(state.sessionId, messageId);
     final next = Map<String, Message>.from(state.messages)..remove(messageId);
@@ -250,6 +282,8 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
             ),
           );
         }
+      case 'command.updated':
+        _onCommandUpdated(event);
       case 'status.updated':
         state = state.copyWith(
           isStreaming: event.data['status']?.toString() == 'running',
@@ -288,6 +322,21 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
       session: session,
       isStreaming: isIdle ? false : state.isStreaming,
     );
+  }
+
+  void _onCommandUpdated(GatewayEvent event) {
+    final stream = event.data['stream'] as String? ?? 'stdout';
+    final text = event.data['text'] as String?;
+    if (text == null || text.isEmpty) return;
+    final next = <TerminalLine>[
+      ...state.terminalLines,
+      TerminalLine(
+        stream: stream,
+        text: text.endsWith('\n') ? text : '$text\n',
+        timestampMs: event.timestampMs,
+      ),
+    ];
+    state = state.copyWith(terminalLines: next);
   }
 
   void _onMessage(Map<String, dynamic> data) {

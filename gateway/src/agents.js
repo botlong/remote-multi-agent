@@ -628,6 +628,7 @@ class OpenCodeAdapter {
         body: {
           providerID: providerId,
           modelID: modelId,
+          directory: session.directory,
           mode: (session.raw && session.raw.permissionMode) || process.env.OPENCODE_MODE || 'build',
           parts: messageParts,
         },
@@ -681,6 +682,7 @@ class OpenCodeAdapter {
         body: {
           providerID: providerId,
           modelID: modelId,
+          directory: session.directory,
           mode: (session.raw && session.raw.permissionMode) || process.env.OPENCODE_MODE || 'build',
           parts: messageParts,
         },
@@ -1013,9 +1015,18 @@ function runJsonCli({
 }
 
 function extractTextDelta(raw, state) {
-  if (typeof raw.delta === 'string') return raw.delta;
-  if (typeof raw.text_delta === 'string') return raw.text_delta;
-  if (typeof raw.content_delta === 'string') return raw.content_delta;
+  if (typeof raw.delta === 'string') {
+    rememberEmittedText(raw.delta, state);
+    return raw.delta;
+  }
+  if (typeof raw.text_delta === 'string') {
+    rememberEmittedText(raw.text_delta, state);
+    return raw.text_delta;
+  }
+  if (typeof raw.content_delta === 'string') {
+    rememberEmittedText(raw.content_delta, state);
+    return raw.content_delta;
+  }
 
   const properties = raw.properties || raw.data || {};
   const part = properties.part || raw.part;
@@ -1025,7 +1036,7 @@ function extractTextDelta(raw, state) {
 
   if (raw.type === 'assistant' && raw.message) {
     const text = contentArrayText(raw.message.content);
-    if (text) return suffixDelta('claude:assistant', text, state);
+    if (text) return suffixDelta('assistant', text, state);
   }
 
   if (raw.item && raw.item.role === 'assistant') {
@@ -1053,6 +1064,11 @@ function extractTextDelta(raw, state) {
 
   if (!state.sawText && typeof raw.result === 'string') return raw.result;
   return '';
+}
+
+function rememberEmittedText(delta, state) {
+  const previous = state.lastFullTextByKey.get('assistant') || '';
+  state.lastFullTextByKey.set('assistant', previous + delta);
 }
 
 function suffixDelta(key, fullText, state) {
