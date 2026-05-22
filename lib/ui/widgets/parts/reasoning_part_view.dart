@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../models/part.dart';
 
-/// Collapsible "reasoning trace" view. Mirrors how OpenCode TUI / Claude
-/// Console show internal thinking — collapsed by default, click to expand.
 class ReasoningPartView extends StatefulWidget {
   const ReasoningPartView({super.key, required this.part});
   final ReasoningPart part;
@@ -19,20 +17,22 @@ class _ReasoningPartViewState extends State<ReasoningPartView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final charCount = widget.part.text.length;
+
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
-        color: scheme.tertiaryContainer.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(10),
+        color: scheme.tertiaryContainer.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: scheme.tertiaryContainer.withValues(alpha: 0.3),
+          color: scheme.tertiaryContainer.withValues(alpha: 0.2),
         ),
       ),
       child: InkWell(
         onTap: () => setState(() => _expanded = !_expanded),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -40,28 +40,37 @@ class _ReasoningPartViewState extends State<ReasoningPartView> {
                 children: [
                   Icon(
                     Icons.lightbulb_outline,
-                    size: 14,
+                    size: 13,
                     color: scheme.tertiary,
                   ),
                   const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Thinking',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: scheme.tertiary,
-                      ),
+                  Text(
+                    'Thinking',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.tertiary,
                     ),
                   ),
+                  if (!_expanded && charCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '($charCount chars)',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontSize: 10,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    size: 14,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
                 ],
               ),
               if (_expanded) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   widget.part.text,
                   style: theme.textTheme.bodySmall?.copyWith(

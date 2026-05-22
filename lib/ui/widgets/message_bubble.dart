@@ -28,13 +28,9 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isUser = message.role == MessageRole.user;
 
-    final partWidgets = <Widget>[];
-    for (final part in message.orderedParts) {
-      partWidgets.add(_buildPart(part));
-    }
+    final partWidgets = _buildPartWidgets();
 
     if (partWidgets.isEmpty && message.role == MessageRole.assistant) {
-      // Stream just started — show a typing indicator.
       partWidgets.add(const _TypingIndicator());
     }
 
@@ -87,7 +83,10 @@ class MessageBubble extends StatelessWidget {
                       children: [
                         for (final w in partWidgets) ...[
                           w,
-                          if (w is! StepPartView) const SizedBox(height: 4),
+                          if (w is! StepPartView &&
+                              w is! ToolPartView &&
+                              w is! _CollapsedToolGroup)
+                            const SizedBox(height: 4),
                         ],
                       ],
                     ),
@@ -208,6 +207,38 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  List<Widget> _buildPartWidgets() {
+    final parts = message.orderedParts.toList();
+    final widgets = <Widget>[];
+    int i = 0;
+
+    while (i < parts.length) {
+      final part = parts[i];
+
+      // Group consecutive completed tools (3+)
+      if (part is ToolPart && part.status.isTerminal) {
+        int j = i;
+        while (j < parts.length &&
+            parts[j] is ToolPart &&
+            (parts[j] as ToolPart).status.isTerminal) {
+          j++;
+        }
+        final groupLen = j - i;
+        if (groupLen >= 3) {
+          final toolParts = parts.sublist(i, j).cast<ToolPart>();
+          widgets.add(_CollapsedToolGroup(tools: toolParts));
+          i = j;
+          continue;
+        }
+      }
+
+      widgets.add(_buildPart(part));
+      i++;
+    }
+
+    return widgets;
+  }
+
   Widget _buildPart(Part p) => switch (p) {
         TextPart() => TextPartView(part: p),
         ReasoningPart() => ReasoningPartView(part: p),
@@ -241,6 +272,97 @@ class _RoleAvatar extends StatelessWidget {
         isUser ? Icons.person : Icons.auto_awesome,
         size: 14,
         color: isUser ? scheme.primary : scheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _CollapsedToolGroup extends StatefulWidget {
+  const _CollapsedToolGroup({required this.tools});
+  final List<ToolPart> tools;
+
+  @override
+  State<_CollapsedToolGroup> createState() => _CollapsedToolGroupState();
+}
+
+class _CollapsedToolGroupState extends State<_CollapsedToolGroup> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final errorCount = widget.tools.where((t) => t.status == ToolStatus.error).length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.2),
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 14,
+                    color: errorCount > 0 ? scheme.error : Colors.green,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${widget.tools.length} operations completed',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (errorCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '($errorCount failed)',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        color: scheme.error,
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 14,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded) ...[
+            Divider(
+              height: 0,
+              color: scheme.outlineVariant.withValues(alpha: 0.2),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(6),
+              child: Column(
+                children: [
+                  for (final tool in widget.tools)
+                    ToolPartView(part: tool),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

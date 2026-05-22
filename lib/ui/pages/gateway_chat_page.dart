@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/gateway_providers.dart';
 import '../../state/notification_service.dart';
+import '../widgets/agent_activity_bar.dart';
 import '../widgets/agent_badge.dart';
 import '../widgets/attachment_picker.dart';
 import '../widgets/message_bubble.dart';
@@ -270,6 +271,8 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
               attachments: _attachments,
               onRemove: (i) => setState(() => _attachments.removeAt(i)),
             ),
+          if (chatState.activeTool != null)
+            AgentActivityBar(activeTool: chatState.activeTool!),
           if (chatState.usage != null) _UsageBar(usage: chatState.usage!),
           _InputBar(
             controller: _input,

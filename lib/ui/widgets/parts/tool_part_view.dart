@@ -27,7 +27,8 @@ class _ToolPartViewState extends State<ToolPartView> {
   @override
   void initState() {
     super.initState();
-    _expanded = !widget.part.status.isTerminal;
+    // Only expand running tools; completed/error start collapsed
+    _expanded = widget.part.status == ToolStatus.running;
   }
 
   @override
@@ -138,15 +139,17 @@ class _ToolPartViewState extends State<ToolPartView> {
     final primary = _primaryInfo;
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3),
+      margin: const EdgeInsets.symmetric(vertical: 1),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         border: Border.all(
           color: widget.part.status == ToolStatus.running
               ? statusColor.withValues(alpha: 0.3)
-              : scheme.outlineVariant.withValues(alpha: 0.3),
+              : widget.part.status == ToolStatus.error
+                  ? scheme.error.withValues(alpha: 0.3)
+                  : scheme.outlineVariant.withValues(alpha: 0.2),
         ),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -154,9 +157,9 @@ class _ToolPartViewState extends State<ToolPartView> {
           // ── Header row ──
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(
                 children: [
                   Icon(_toolIcon, size: 15, color: scheme.onSurfaceVariant),

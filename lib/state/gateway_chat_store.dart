@@ -45,6 +45,24 @@ class TerminalLine {
 }
 
 @immutable
+class ActiveTool {
+  const ActiveTool({
+    required this.name,
+    this.info,
+    this.icon,
+  });
+
+  final String name;
+  final String? info;
+  final String? icon;
+
+  String get displayLabel {
+    if (info != null && info!.isNotEmpty) return '$name  $info';
+    return name;
+  }
+}
+
+@immutable
 class GatewayChatState {
   const GatewayChatState({
     required this.sessionId,
@@ -55,6 +73,7 @@ class GatewayChatState {
     required this.terminalLines,
     this.error,
     this.usage,
+    this.activeTool,
   });
 
   final String sessionId;
@@ -65,6 +84,7 @@ class GatewayChatState {
   final List<TerminalLine> terminalLines;
   final String? error;
   final TokenUsage? usage;
+  final ActiveTool? activeTool;
 
   String get sessionTitle => session?.title ?? '';
   Iterable<Message> get orderedMessages {
@@ -81,6 +101,7 @@ class GatewayChatState {
         isStreaming: false,
         connection: GatewayChatConnectionState.connecting,
         terminalLines: const <TerminalLine>[],
+        activeTool: null,
       );
 
   GatewayChatState copyWith({
@@ -93,6 +114,8 @@ class GatewayChatState {
     String? error,
     bool clearError = false,
     TokenUsage? usage,
+    ActiveTool? activeTool,
+    bool clearActiveTool = false,
   }) =>
       GatewayChatState(
         sessionId: sessionId ?? this.sessionId,
@@ -103,6 +126,7 @@ class GatewayChatState {
         terminalLines: terminalLines ?? this.terminalLines,
         error: clearError ? null : (error ?? this.error),
         usage: usage ?? this.usage,
+        activeTool: clearActiveTool ? null : (activeTool ?? this.activeTool),
       );
 }
 
@@ -265,7 +289,7 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
       case 'session.started':
         state = state.copyWith(isStreaming: true);
       case 'session.completed':
-        state = state.copyWith(isStreaming: false);
+        state = state.copyWith(isStreaming: false, clearActiveTool: true);
         showAppNotification(
           title: 'Agent finished',
           body: state.sessionTitle.isNotEmpty
@@ -277,7 +301,7 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         final errMsg = _stringMessage(event.data['error']) ??
             _stringMessage(event.data['message']) ??
             'session error';
-        state = state.copyWith(isStreaming: false, error: errMsg);
+        state = state.copyWith(isStreaming: false, error: errMsg, clearActiveTool: true);
         showAppNotification(
           title: 'Agent error',
           body: errMsg,
@@ -410,6 +434,21 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     if (part.id.isEmpty) return;
     final messageId = part.messageId;
     if (messageId.isEmpty) return;
+
+    // Track active tool for the activity bar
+    if (part is ToolPart) {
+      if (part.status == ToolStatus.running) {
+        state = state.copyWith(
+          activeTool: ActiveTool(
+            name: part.tool,
+            info: _extractToolInfo(part),
+          ),
+        );
+      } else if (part.status.isTerminal) {
+        state = state.copyWith(clearActiveTool: true);
+      }
+    }
+
     final existing = state.messages[messageId];
     if (existing == null) {
       final placeholder = Message(
@@ -427,6 +466,28 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     final next = Map<String, Message>.from(state.messages)
       ..[messageId] = existing.withPartUpsert(part);
     state = state.copyWith(messages: next);
+  }
+
+  static String? _extractToolInfo(ToolPart part) {
+    final input = part.input;
+    if (input == null) return null;
+    final path = input['filePath'] as String? ??
+        input['path'] as String? ??
+        input['file'] as String? ??
+        input['file_path'] as String?;
+    if (path != null) {
+      final segments = path.split(RegExp(r'[/\\]'));
+      return segments.length > 2
+          ? '.../${segments.sublist(segments.length - 2).join('/')}'
+          : path;
+    }
+    final command = input['command'] as String? ?? input['cmd'] as String?;
+    if (command != null) {
+      return command.length > 50 ? '${command.substring(0, 50)}...' : command;
+    }
+    final pattern = input['pattern'] as String? ?? input['query'] as String?;
+    if (pattern != null) return pattern;
+    return null;
   }
 
   void _onMessageDelta(GatewayEvent event) {
