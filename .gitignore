@@ -70,3 +70,11 @@ service-account-*.json
 firebase-admin*.json
 google-services.json
 GoogleService-Info.plist
+
+# Build artifacts
+*.ipa
+*.apk
+*.aab
+
+# Claude Code local settings
+.claude/settings.local.json

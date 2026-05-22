@@ -830,6 +830,11 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
   late final TextEditingController _opencodeKeyCtrl;
   late final TextEditingController _opencodeBaseUrlCtrl;
 
+  // Masked key hints shown as placeholder when editing
+  String _anthropicKeyHint = '';
+  String _openaiKeyHint = '';
+  String _opencodeKeyHint = '';
+
   final Map<String, bool> _obscure = {
     'anthropic': true,
     'openai': true,
@@ -853,18 +858,25 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
     final openai = keys['openai'] as Map<String, dynamic>? ?? {};
     final opencode = keys['opencode'] as Map<String, dynamic>? ?? {};
 
+    // When editing, don't populate key fields with masked values.
+    // Show masked values as hints only; empty field means "keep existing".
+    final isEdit = existing != null;
     _anthropicKeyCtrl =
-        TextEditingController(text: anthropic['key'] as String? ?? '');
+        TextEditingController(text: isEdit ? '' : (anthropic['key'] as String? ?? ''));
     _anthropicBaseUrlCtrl =
         TextEditingController(text: anthropic['baseUrl'] as String? ?? '');
     _openaiKeyCtrl =
-        TextEditingController(text: openai['key'] as String? ?? '');
+        TextEditingController(text: isEdit ? '' : (openai['key'] as String? ?? ''));
     _openaiBaseUrlCtrl =
         TextEditingController(text: openai['baseUrl'] as String? ?? '');
     _opencodeKeyCtrl =
-        TextEditingController(text: opencode['key'] as String? ?? '');
+        TextEditingController(text: isEdit ? '' : (opencode['key'] as String? ?? ''));
     _opencodeBaseUrlCtrl =
         TextEditingController(text: opencode['baseUrl'] as String? ?? '');
+
+    _anthropicKeyHint = anthropic['key'] as String? ?? '';
+    _openaiKeyHint = openai['key'] as String? ?? '';
+    _opencodeKeyHint = opencode['key'] as String? ?? '';
   }
 
   @override
@@ -973,6 +985,7 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
             providerKey: 'anthropic',
             keyCtrl: _anthropicKeyCtrl,
             baseUrlCtrl: _anthropicBaseUrlCtrl,
+            keyHint: _anthropicKeyHint,
           ),
           const SizedBox(height: 16),
           _buildProviderSection(
@@ -981,6 +994,7 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
             providerKey: 'openai',
             keyCtrl: _openaiKeyCtrl,
             baseUrlCtrl: _openaiBaseUrlCtrl,
+            keyHint: _openaiKeyHint,
           ),
           const SizedBox(height: 16),
           _buildProviderSection(
@@ -989,6 +1003,7 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
             providerKey: 'opencode',
             keyCtrl: _opencodeKeyCtrl,
             baseUrlCtrl: _opencodeBaseUrlCtrl,
+            keyHint: _opencodeKeyHint,
           ),
         ],
       ),
@@ -1001,6 +1016,7 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
     required String providerKey,
     required TextEditingController keyCtrl,
     required TextEditingController baseUrlCtrl,
+    String keyHint = '',
   }) {
     final isObscured = _obscure[providerKey] ?? true;
     return Card(
@@ -1022,6 +1038,7 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
               obscureText: isObscured,
               decoration: InputDecoration(
                 labelText: 'API Key',
+                hintText: keyHint.isNotEmpty ? keyHint : null,
                 prefixIcon: const Icon(Icons.vpn_key_outlined),
                 suffixIcon: IconButton(
                   icon: Icon(

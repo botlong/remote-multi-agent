@@ -193,7 +193,8 @@ class CodexAdapter {
   run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
     const args = buildCodexArgs(session);
 
-    const profileKey = this.profileStore?.getKeyForProvider('openai');
+    const profileKey = this.profileStore?.getKeyForProviderById(
+      session.raw?.profileId, 'openai');
     const extraEnv = {};
     if (profileKey?.key) {
       extraEnv.OPENAI_API_KEY = profileKey.key;
@@ -489,9 +490,9 @@ class ClaudeCodeAdapter {
     if (withResume && session.agentSessionId) {
       args.push('--resume', session.agentSessionId);
     }
-    args.push(prompt);
 
-    const profileKey = this.profileStore?.getKeyForProvider('anthropic');
+    const profileKey = this.profileStore?.getKeyForProviderById(
+      session.raw?.profileId, 'anthropic');
     const extraEnv = {};
     if (profileKey?.key) {
       extraEnv.ANTHROPIC_API_KEY = profileKey.key;
@@ -530,7 +531,7 @@ class ClaudeCodeAdapter {
       args,
       cwd: session.directory,
       env: extraEnv,
-      stdin: null,
+      stdin: prompt,
       agentId: this.id,
       onEvent,
       onText,
@@ -746,7 +747,7 @@ class OpenCodeAdapter {
     if (session.agentSessionId) args.push('--session', session.agentSessionId);
     args.push(prompt);
 
-    const extraEnv = this._buildProfileEnv();
+    const extraEnv = this._buildProfileEnv(session.raw?.profileId);
 
     return runJsonCli({
       command: this.command,
@@ -762,19 +763,19 @@ class OpenCodeAdapter {
     });
   }
 
-  _buildProfileEnv() {
+  _buildProfileEnv(profileId) {
     const extraEnv = {};
-    const anthropicKey = this.profileStore?.getKeyForProvider('anthropic');
+    const anthropicKey = this.profileStore?.getKeyForProviderById(profileId, 'anthropic');
     if (anthropicKey?.key) {
       extraEnv.ANTHROPIC_API_KEY = anthropicKey.key;
       if (anthropicKey.baseUrl) extraEnv.ANTHROPIC_BASE_URL = anthropicKey.baseUrl;
     }
-    const openaiKey = this.profileStore?.getKeyForProvider('openai');
+    const openaiKey = this.profileStore?.getKeyForProviderById(profileId, 'openai');
     if (openaiKey?.key) {
       extraEnv.OPENAI_API_KEY = openaiKey.key;
       if (openaiKey.baseUrl) extraEnv.OPENAI_BASE_URL = openaiKey.baseUrl;
     }
-    const googleKey = this.profileStore?.getKeyForProvider('google');
+    const googleKey = this.profileStore?.getKeyForProviderById(profileId, 'google');
     if (googleKey?.key) {
       extraEnv.GOOGLE_API_KEY = googleKey.key;
       if (googleKey.baseUrl) extraEnv.GOOGLE_BASE_URL = googleKey.baseUrl;

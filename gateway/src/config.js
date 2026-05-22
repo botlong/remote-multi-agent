@@ -129,7 +129,18 @@ class ProfileStore {
 
     if (patch.name !== undefined) profile.name = patch.name;
     if (patch.keys !== undefined && typeof patch.keys === 'object') {
-      profile.keys = patch.keys;
+      // Merge keys: only overwrite providers that are explicitly provided.
+      // Others keep their existing values.
+      if (!profile.keys) profile.keys = {};
+      for (const [provider, entry] of Object.entries(patch.keys)) {
+        if (!entry || typeof entry !== 'object') continue;
+        const existing = profile.keys[provider] || {};
+        profile.keys[provider] = {
+          ...existing,
+          ...(entry.key ? { key: entry.key } : {}),
+          ...(entry.baseUrl !== undefined ? { baseUrl: entry.baseUrl } : {}),
+        };
+      }
     }
     if (patch.defaultModel !== undefined && typeof patch.defaultModel === 'object') {
       profile.defaultModel = patch.defaultModel;
@@ -185,6 +196,13 @@ class ProfileStore {
     return { key: entry.key || null, baseUrl: entry.baseUrl || null };
   }
 
+  getKeyForProviderById(profileId, provider) {
+    const profile = profileId ? this.get(profileId) : this.getActive();
+    if (!profile || !profile.keys || !profile.keys[provider]) return null;
+    const entry = profile.keys[provider];
+    return { key: entry.key || null, baseUrl: entry.baseUrl || null };
+  }
+
   /**
    * From the active profile, return the default model ID for a given agent.
    * Returns null if no active profile or agent not configured.
@@ -223,4 +241,4 @@ class ProfileStore {
   }
 }
 
-module.exports = { ProfileStore };
+module.exports = { ProfileStore, maskProfile };

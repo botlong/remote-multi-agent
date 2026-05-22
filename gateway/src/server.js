@@ -7,7 +7,7 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 
 const { AgentRegistry } = require('./agents');
-const { ProfileStore } = require('./config');
+const { ProfileStore, maskProfile } = require('./config');
 const { EventBus, makeEvent } = require('./events');
 const { handleGit, handleFiles } = require('./fs_routes');
 const {
@@ -95,6 +95,7 @@ async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
           segments,
           store,
           registry,
+          profileStore,
         });
       }
 
@@ -209,7 +210,7 @@ async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
   return server;
 }
 
-async function handleProjects({ request, response, segments, store, registry }) {
+async function handleProjects({ request, response, segments, store, registry, profileStore }) {
   if (segments.length === 1 && request.method === 'GET') {
     return sendJson(response, store.listProjects());
   }
@@ -256,6 +257,8 @@ async function handleProjects({ request, response, segments, store, registry }) 
       const rawExtra = {};
       if (body.sandbox) rawExtra.sandbox = body.sandbox;
       if (body.permissionMode) rawExtra.permissionMode = body.permissionMode;
+      const activeProfile = profileStore.getActive();
+      if (activeProfile) rawExtra.profileId = activeProfile.id;
       const session = await store.createSession({
         project,
         agentId: body.agentId,
@@ -311,7 +314,7 @@ async function handleSettings({ request, response, segments, profileStore }) {
     if (segments.length === 2 && request.method === 'POST') {
       const body = await readJson(request);
       const profile = await profileStore.create(body);
-      return sendJson(response, profile, 201);
+      return sendJson(response, maskProfile(profile), 201);
     }
 
     const id = segments[2];
@@ -328,7 +331,7 @@ async function handleSettings({ request, response, segments, profileStore }) {
       const body = await readJson(request);
       const updated = await profileStore.update(id, body);
       if (!updated) throw httpError(404, 'profile not found');
-      return sendJson(response, updated);
+      return sendJson(response, maskProfile(updated));
     }
 
     // DELETE /settings/profiles/:id
