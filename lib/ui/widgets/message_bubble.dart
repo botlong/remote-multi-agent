@@ -91,6 +91,17 @@ class MessageBubble extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (message.createdAtMs != null && message.createdAtMs! > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3, left: 6, right: 6),
+                      child: Text(
+                        _formatTime(message.createdAtMs!),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                              fontSize: 9,
+                            ),
+                      ),
+                    ),
                   if (message.modelId != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 3, left: 6, right: 6),
@@ -528,4 +539,15 @@ class _UnknownPartView extends StatelessWidget {
           style: Theme.of(context).textTheme.labelSmall,
         ),
       );
+}
+
+String _formatTime(int ms) {
+  final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+  final now = DateTime.now();
+  final diff = now.difference(dt);
+  if (diff.inDays == 0) {
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+  if (diff.inDays == 1) return 'Yesterday ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }

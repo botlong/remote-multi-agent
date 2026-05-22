@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
@@ -14,17 +16,76 @@ import '../../../models/part.dart';
 /// - Inline images
 /// - Tappable links (opened in external browser)
 /// - Tables, blockquotes, lists
-class TextPartView extends StatelessWidget {
+///
+/// During rapid streaming (text changing frequently), renders as plain
+/// [SelectableText] for performance. Switches to full Markdown after 300ms
+/// of no changes.
+class TextPartView extends StatefulWidget {
   const TextPartView({super.key, required this.part});
   final TextPart part;
 
   @override
+  State<TextPartView> createState() => _TextPartViewState();
+}
+
+class _TextPartViewState extends State<TextPartView> {
+  String _lastText = '';
+  bool _useMarkdown = true;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastText = widget.part.text;
+    // Start with markdown since we don't know if streaming yet.
+    _useMarkdown = true;
+  }
+
+  @override
+  void didUpdateWidget(covariant TextPartView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.part.text != _lastText) {
+      _lastText = widget.part.text;
+      // Text is still changing — switch to plain text mode for performance.
+      if (_useMarkdown) {
+        setState(() => _useMarkdown = false);
+      }
+      // Reset the debounce timer.
+      _debounce?.cancel();
+      _debounce = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() => _useMarkdown = true);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (!_useMarkdown) {
+      // Fast plain-text rendering during streaming.
+      return SelectableText(
+        widget.part.text,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontFamily: 'monospace',
+          fontSize: 13,
+          height: 1.5,
+        ),
+      );
+    }
+
     final isDark = theme.brightness == Brightness.dark;
 
     return MarkdownBody(
-      data: part.text,
+      data: widget.part.text,
       selectable: true,
       shrinkWrap: true,
       onTapLink: (text, href, title) => _openLink(context, href),

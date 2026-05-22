@@ -569,6 +569,36 @@ async function handleLocalCommand(text, session, store, bus) {
   }
 }
 
+function generateSmartTitle(userPrompt, assistantReply) {
+  const prompt = userPrompt.trim();
+
+  // If user prompt is short enough, use it directly (cleaned up)
+  if (prompt.length <= 60) {
+    return prompt.replace(/\s+/g, ' ').replace(/^(please|can you|could you|help me)\s+/i, '');
+  }
+
+  // Try to extract the first sentence or meaningful phrase
+  const firstSentence = prompt.match(/^[^.!?\n]+[.!?]?/);
+  if (firstSentence && firstSentence[0].length <= 80) {
+    return firstSentence[0].replace(/\s+/g, ' ').trim();
+  }
+
+  // Try to extract from assistant reply — often starts with "I'll..." or "Let me..."
+  const assistantFirst = (assistantReply || '').match(/^(?:I'll|Let me|I will|I can|Here's|I've)\s+[^.!?\n]+/i);
+  if (assistantFirst && assistantFirst[0].length <= 80) {
+    return assistantFirst[0].replace(/\s+/g, ' ').trim();
+  }
+
+  // Fallback: truncate user prompt intelligently (at word boundary)
+  const words = prompt.split(/\s+/);
+  let title = '';
+  for (const word of words) {
+    if ((title + ' ' + word).length > 55) break;
+    title = title ? `${title} ${word}` : word;
+  }
+  return title + (prompt.length > title.length ? '…' : '');
+}
+
 async function startTurn({ session, text, parts = [], store, registry, bus, activeRuns, pendingTurns }) {
   if (activeRuns.has(session.id)) {
     throw httpError(409, 'session already running');
@@ -768,11 +798,12 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
       const refreshed2 = store.getSession(session.id);
       const isDefault = refreshed2 && /^(Codex|Claude Code|OpenCode)\s+session$/i.test(refreshed2.title);
       if (isDefault) {
-        const userSnippet = text.trim().replace(/\s+/g, ' ').slice(0, 50);
-        const title = userSnippet + (text.trim().length > 50 ? '\u2026' : '');
-        store.updateSession(session.id, { title }).then(u => {
-          if (u) emit(bus, 'session.updated', u, { session: u });
-        }).catch(() => {});
+        const title = generateSmartTitle(text, messageText(assistantMessage));
+        if (title) {
+          store.updateSession(session.id, { title }).then(u => {
+            if (u) emit(bus, 'session.updated', u, { session: u });
+          }).catch(() => {});
+        }
       }
     }
 

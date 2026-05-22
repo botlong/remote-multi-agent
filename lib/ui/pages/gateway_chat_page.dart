@@ -42,10 +42,12 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   final _focus = FocusNode();
   final _scroll = ScrollController();
   bool _showCommands = false;
+  bool _showFileHints = false;
   bool _isScrolledAway = false;
   int _lastMessageCount = 0;
   bool _hasNewWhileAway = false;
   final List<Attachment> _attachments = [];
+  String? _activeProfileName;
 
   @override
   void initState() {
@@ -62,6 +64,13 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
             sessionId: widget.session.id,
             projectId: widget.project.id,
           );
+      // Fetch active profile name for display in AppBar.
+      final client = ref.read(gatewayClientProvider);
+      client.getActiveProfile().then((profile) {
+        if (mounted && profile != null) {
+          setState(() => _activeProfileName = profile['name'] as String?);
+        }
+      }).catchError((_) {});
     });
   }
 
@@ -104,6 +113,10 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     final shouldShow = text.startsWith('/') || text.startsWith(r'$');
     if (shouldShow != _showCommands) {
       setState(() => _showCommands = shouldShow);
+    }
+    final hasAt = text.contains('@') && !text.startsWith('/') && !text.startsWith(r'$');
+    if (hasAt != _showFileHints) {
+      setState(() => _showFileHints = hasAt);
     }
   }
 
@@ -188,6 +201,23 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
                       ),
                     ] else
                       const Spacer(),
+                    if (_activeProfileName != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.tertiaryContainer,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          _activeProfileName!,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontSize: 9,
+                            color: Theme.of(context).colorScheme.onTertiaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -205,6 +235,10 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
 
           return Column(
         children: [
+          if (chatState.connection == GatewayChatConnectionState.disconnected)
+            const _DisconnectedBanner()
+          else if (chatState.connection == GatewayChatConnectionState.connecting)
+            const _ConnectingBanner(),
           Expanded(
             child: Stack(
               children: [
@@ -276,6 +310,8 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
                 );
               },
             ),
+          if (_showFileHints)
+            _FileHintBar(directory: widget.session.directory),
           if (_attachments.isNotEmpty)
             AttachmentPreviewStrip(
               attachments: _attachments,
@@ -1839,5 +1875,100 @@ class _CostSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _DisconnectedBanner extends StatelessWidget {
+  const _DisconnectedBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: scheme.error.withValues(alpha: 0.1),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off, size: 14, color: scheme.error),
+          const SizedBox(width: 8),
+          Text(
+            'Disconnected — reconnecting...',
+            style: TextStyle(
+              fontSize: 12,
+              color: scheme.error,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConnectingBanner extends StatelessWidget {
+  const _ConnectingBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: scheme.surfaceContainerHigh,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Connecting...',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FileHintBar extends StatelessWidget {
+  const _FileHintBar({required this.directory});
+  final String directory;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        border: Border(top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.2))),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.attach_file, size: 14, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Type file path relative to ${_shortDir(directory)}',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _shortDir(String path) {
+    final parts = path.split(RegExp(r'[/\\]')).where((p) => p.isNotEmpty).toList();
+    return parts.length > 2 ? '.../${parts.sublist(parts.length - 2).join('/')}' : path;
   }
 }

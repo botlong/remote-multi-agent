@@ -4,14 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../state/gateway_client_provider.dart';
 import '../../state/settings_store.dart';
 import 'chat_tab.dart';
-import 'files_page.dart';
 import 'gateway_chat_page.dart';
 import 'gateway_ui_adapters.dart';
-import 'git_page.dart';
 import 'settings_page.dart';
 
 /// Root shell after first-run configuration. Houses a Material 3
-/// [NavigationBar] with 4 tabs and preserves state across switches
+/// [NavigationBar] with 2 tabs and preserves state across switches
 /// via [IndexedStack].
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -29,16 +27,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       icon: Icon(Icons.workspaces_outlined),
       selectedIcon: Icon(Icons.workspaces),
       label: 'Projects',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.difference_outlined),
-      selectedIcon: Icon(Icons.difference),
-      label: 'Git',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.snippet_folder_outlined),
-      selectedIcon: Icon(Icons.snippet_folder),
-      label: 'Files',
     ),
     NavigationDestination(
       icon: Icon(Icons.tune_outlined),
@@ -100,8 +88,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         index: _currentIndex,
         children: const [
           ChatTab(),
-          GitPage(),
-          FilesPage(),
           SettingsPage(firstRun: false),
         ],
       ),
