@@ -262,6 +262,7 @@ String _defaultPermission(String agentId) => switch (agentId) {
       _ => 'build',
     };
 
+
 class _AgentOption extends StatelessWidget {
   const _AgentOption({
     required this.agent,
@@ -446,16 +447,19 @@ class _PermissionPicker extends StatelessWidget {
   static List<_PermOption> _optionsFor(String agentId) {
     return switch (agentId) {
       'codex' => const [
-          _PermOption('full-auto', 'Full Auto', 'No confirmation needed'),
           _PermOption('workspace-write', 'Write', 'Write to workspace (default)'),
-          _PermOption('workspace-read', 'Read-only', 'Read workspace only'),
-          _PermOption('locked', 'Locked', 'No file access'),
+          _PermOption('read-only', 'Read-only', 'Read workspace only'),
+          _PermOption('danger-full-access', 'Full Access', 'Full disk access (dangerous)'),
         ],
       'claude-code' => const [
-          _PermOption('acceptEdits', 'Accept Edits', 'Auto-accept edits (default)'),
+          _PermOption('acceptEdits', 'Accept Edits', 'Auto-accept file edits (default)'),
+          _PermOption('auto', 'Auto', 'Auto-approve most actions'),
           _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
-          _PermOption('bypassPermissions', 'Full Auto', 'Skip all permission prompts'),
-          _PermOption('default', 'Ask', 'Prompt for each permission (interactive only)'),
+          _PermOption('bypassPermissions', 'Bypass All', 'Skip all permission prompts (dangerous)'),
+        ],
+      'opencode' => const [
+          _PermOption('build', 'Build', 'Standard build mode (default)'),
+          _PermOption('plan', 'Plan', 'Plan mode - read-only exploration'),
         ],
       _ => const [
           _PermOption('build', 'Build', 'Standard build mode'),

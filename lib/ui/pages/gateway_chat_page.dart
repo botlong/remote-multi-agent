@@ -912,18 +912,21 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   static List<_PermOption> _permissionOptionsFor(String agentId) {
     return switch (agentId) {
       'claude-code' => const [
+          _PermOption('acceptEdits', 'Accept Edits', 'Auto-accept file edits (default)'),
+          _PermOption('auto', 'Auto', 'Auto-approve most actions'),
           _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
-          _PermOption('acceptEdits', 'Accept Edits', 'Auto-accept edits'),
-          _PermOption('bypassPermissions', 'Full Auto', 'Skip all permission prompts'),
-          _PermOption('default', 'Ask', 'Prompt for each permission'),
+          _PermOption('bypassPermissions', 'Bypass All', 'Skip all permission prompts (dangerous)'),
         ],
       'codex' => const [
-          _PermOption('full-auto', 'Full Auto', 'No confirmation needed'),
-          _PermOption('workspace-write', 'Write', 'Write to workspace'),
-          _PermOption('workspace-read', 'Read-only', 'Read workspace only'),
-          _PermOption('locked', 'Locked', 'No file access'),
+          _PermOption('workspace-write', 'Write', 'Write to workspace (default)'),
+          _PermOption('read-only', 'Read-only', 'Read workspace only'),
+          _PermOption('danger-full-access', 'Full Access', 'Full disk access (dangerous)'),
         ],
-      'opencode' || _ => const [
+      'opencode' => const [
+          _PermOption('build', 'Build', 'Standard build mode (default)'),
+          _PermOption('plan', 'Plan', 'Plan mode - read-only exploration'),
+        ],
+      _ => const [
           _PermOption('build', 'Build', 'Standard build mode'),
           _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
         ],
