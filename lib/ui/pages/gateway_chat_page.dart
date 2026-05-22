@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/gateway_providers.dart';
+import '../../state/notification_service.dart';
 import '../widgets/agent_badge.dart';
 import '../widgets/attachment_picker.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/session_status_chip.dart';
 import 'diff_page.dart';
 import 'gateway_ui_adapters.dart';
+import 'terminal_page.dart';
 
 const _scrollAwayThreshold = 200.0;
 
@@ -45,10 +47,18 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     _input.addListener(_onInputChanged);
     _scroll.addListener(_onScroll);
     WidgetsBinding.instance.addObserver(this);
+    // Mark this session as active to suppress notifications
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      setActiveSessionId(widget.session.id);
+      ref.read(activeSessionIdProvider.notifier).state = widget.session.id;
+    });
   }
 
   @override
   void dispose() {
+    // Clear active session when leaving
+    setActiveSessionId(null);
+    ref.read(activeSessionIdProvider.notifier).state = null;
     WidgetsBinding.instance.removeObserver(this);
     _input.removeListener(_onInputChanged);
     _scroll.removeListener(_onScroll);
@@ -99,6 +109,16 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
         title: Text(widget.session.title),
         actions: [
           IconButton(
+            icon: const Icon(Icons.terminal),
+            tooltip: 'Terminal',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => TerminalPage(sessionId: widget.session.id),
+              ),
+            ),
+          ),
+          IconButton(
             icon: const Icon(Icons.difference_outlined),
             tooltip: 'View diff',
             onPressed: () => Navigator.push(
@@ -109,12 +129,20 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
             ),
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.ios_share),
-            tooltip: 'Export',
-            onSelected: (v) => _export(v),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'markdown', child: Text('Copy as Markdown')),
-              PopupMenuItem(value: 'json', child: Text('Copy as JSON')),
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More',
+            onSelected: (v) {
+              if (v == 'markdown' || v == 'json') {
+                _export(v);
+              } else if (v == 'handoff') {
+                _showHandoffDialog();
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'handoff', child: Text('Hand off to agent...')),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'markdown', child: Text('Copy as Markdown')),
+              const PopupMenuItem(value: 'json', child: Text('Copy as JSON')),
             ],
           ),
         ],
@@ -403,6 +431,94 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     _input.text = '$quoted\n\n';
     _input.selection = TextSelection.collapsed(offset: _input.text.length);
     _focus.requestFocus();
+  }
+
+  Future<void> _showHandoffDialog() async {
+    final agents = ref.read(agentCatalogProvider).agents;
+    final currentAgentId = widget.session.agentId;
+    final otherAgents =
+        agents.where((a) => a.id != currentAgentId).toList(growable: false);
+    if (otherAgents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No other agents available')),
+      );
+      return;
+    }
+    final promptController = TextEditingController(text: '');
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) {
+        String? selectedAgent = otherAgents.first.id;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Hand off to agent'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedAgent,
+                  decoration: const InputDecoration(
+                    labelText: 'Target Agent',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: otherAgents
+                      .map(
+                        (a) => DropdownMenuItem(
+                          value: a.id,
+                          child: Text(a.displayName),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) =>
+                      setDialogState(() => selectedAgent = v),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: promptController,
+                  decoration: const InputDecoration(
+                    labelText: 'Instructions (optional)',
+                    hintText: 'Review the code changes...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, {
+                  'agentId': selectedAgent!,
+                  'prompt': promptController.text,
+                }),
+                child: const Text('Hand off'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    promptController.dispose();
+    if (result == null || !mounted) return;
+    try {
+      final notifier =
+          ref.read(gatewayChatProvider(widget.session.id).notifier);
+      await notifier.handoff(
+        agentId: result['agentId']!,
+        prompt: result['prompt']?.isNotEmpty == true
+            ? result['prompt']
+            : null,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Handoff failed: $e')),
+      );
+    }
   }
 }
 
@@ -737,7 +853,9 @@ class _UsageBar extends StatelessWidget {
               Icon(Icons.data_usage, size: 13, color: color),
               const SizedBox(width: 6),
               Text(
-                '${totalK}k / ${limitK}k tokens',
+                '${totalK}k / ${limitK}k tokens'
+                '  (in: ${(usage.inputTokens / 1000).toStringAsFixed(1)}k'
+                ' out: ${(usage.outputTokens / 1000).toStringAsFixed(1)}k)',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: color,
                   fontWeight: FontWeight.w600,

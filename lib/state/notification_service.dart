@@ -38,12 +38,17 @@ Future<void> initNotifications() async {
 }
 
 /// Shows a system notification (notification shade / status bar).
-/// Falls back to in-app SnackBar if plugin not initialized.
+/// If [sessionId] matches the currently-active session, the notification
+/// is suppressed (user is already looking at it).
 void showAppNotification({
   required String title,
   String? body,
+  String? sessionId,
   Duration duration = const Duration(seconds: 4),
 }) {
+  // Suppress if user is viewing this session
+  if (sessionId != null && sessionId == _activeSessionId) return;
+
   // System notification
   if (_initialized) {
     _plugin.show(
@@ -62,8 +67,12 @@ void showAppNotification({
       ),
     );
   }
-
 }
+
+String? _activeSessionId;
+
+/// Update the active session ID for notification suppression.
+void setActiveSessionId(String? id) => _activeSessionId = id;
 
 /// Provider that tracks which session ID the user is currently viewing.
 /// Used to suppress notifications for the active session.

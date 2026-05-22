@@ -200,6 +200,8 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         _onMessage(event.data);
       case 'message.part.updated':
         _onPart(event.data);
+      case 'message.completed':
+        _onMessageCompleted(event.data);
       case 'message.delta':
         _onMessageDelta(event);
       case 'message.deleted':
@@ -257,13 +259,35 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     }
   }
 
+  void _onMessageCompleted(Map<String, dynamic> data) {
+    final messageJson = data['message'] is Map
+        ? (data['message'] as Map).cast<String, dynamic>()
+        : data;
+    final messageId = messageJson['id'] as String? ?? '';
+    if (messageId.isNotEmpty) {
+      final existing = state.messages[messageId];
+      if (existing != null) {
+        final updated = existing.copyWith(status: MessageStatus.completed);
+        final next = Map<String, Message>.from(state.messages)
+          ..[messageId] = updated;
+        state = state.copyWith(messages: next);
+      }
+    }
+  }
+
   void _onSession(Map<String, dynamic> data) {
     final session = data['session'] is Map
         ? GatewaySession.fromJson(
             (data['session'] as Map).cast<String, dynamic>(),
           )
         : GatewaySession.fromJson(data);
-    state = state.copyWith(session: session);
+    final isIdle = session.status == GatewaySessionStatus.idle ||
+        session.status == GatewaySessionStatus.error ||
+        session.status == GatewaySessionStatus.completed;
+    state = state.copyWith(
+      session: session,
+      isStreaming: isIdle ? false : state.isStreaming,
+    );
   }
 
   void _onMessage(Map<String, dynamic> data) {
@@ -275,16 +299,29 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     final message = Message.fromJson(messageJson);
     if (message.id.isEmpty) return;
     final existing = state.messages[message.id];
-    final merged = existing == null
-        ? message
-        : existing.copyWith(
-            role: message.role,
-            status: message.status,
-            createdAtMs: message.createdAtMs ?? existing.createdAtMs,
-            completedAtMs: message.completedAtMs ?? existing.completedAtMs,
-            modelId: message.modelId ?? existing.modelId,
-            providerId: message.providerId ?? existing.providerId,
-          );
+    if (existing == null) {
+      final next = Map<String, Message>.from(state.messages)
+        ..[message.id] = message;
+      state = state.copyWith(messages: next, clearError: true);
+      return;
+    }
+    // Prefer existing parts if they have more content (from deltas)
+    final mergedParts = message.parts.length > existing.parts.length
+        ? message.parts
+        : existing.parts.isNotEmpty
+            ? existing.parts
+            : message.parts;
+    final merged = existing.copyWith(
+      role: message.role != MessageRole.unknown ? message.role : existing.role,
+      status: message.status != MessageStatus.unknown
+          ? message.status
+          : existing.status,
+      parts: mergedParts,
+      createdAtMs: message.createdAtMs ?? existing.createdAtMs,
+      completedAtMs: message.completedAtMs ?? existing.completedAtMs,
+      modelId: message.modelId ?? existing.modelId,
+      providerId: message.providerId ?? existing.providerId,
+    );
     final next = Map<String, Message>.from(state.messages)
       ..[merged.id] = merged;
     state = state.copyWith(messages: next, clearError: true);

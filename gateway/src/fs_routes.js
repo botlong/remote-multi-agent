@@ -20,6 +20,17 @@ const path = require('node:path');
 
 const execFileAsync = promisify(execFile);
 
+const MIME_TYPES = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+  ['.svg', 'image/svg+xml'],
+  ['.bmp', 'image/bmp'],
+  ['.ico', 'image/x-icon'],
+]);
+
 // Max depth for recursive file listing
 const MAX_DEPTH = 6;
 // Max total nodes returned
@@ -184,7 +195,41 @@ async function handleFiles(method, pathname, searchParams, body) {
     return { status: 200, data: { content } };
   }
 
+  if (pathname === '/files/raw' && method === 'GET') {
+    const filePath = searchParams.get('path') || '';
+    if (!filePath) return { status: 400, data: { error: 'path is required' } };
+    const resolved = path.resolve(filePath);
+
+    let stat;
+    try {
+      stat = await fs.stat(resolved);
+    } catch {
+      return { status: 404, data: { error: 'file not found' } };
+    }
+    if (stat.isDirectory()) {
+      return { status: 400, data: { error: 'path is a directory' } };
+    }
+    if (stat.size > MAX_READ_SIZE) {
+      return { status: 413, data: { error: 'file too large (>1MB)' } };
+    }
+
+    const body = await fs.readFile(resolved);
+    return {
+      status: 200,
+      body,
+      headers: {
+        'Content-Type': contentTypeForFile(resolved),
+        'Content-Length': String(body.length),
+      },
+    };
+  }
+
   return null;
+}
+
+function contentTypeForFile(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return MIME_TYPES.get(ext) || 'application/octet-stream';
 }
 
 // ---------------------------------------------------------------------------

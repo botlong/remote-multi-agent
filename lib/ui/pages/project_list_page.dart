@@ -77,7 +77,7 @@ class ProjectListPage extends ConsumerWidget {
       if (!context.mounted) return;
       final project = readProject(created);
       if (project.id.isNotEmpty) {
-        _openProject(context, project);
+        _openProject(context, project, ref);
       }
     } catch (err) {
       if (!context.mounted) return;
@@ -199,13 +199,13 @@ class _ErrorEmpty extends StatelessWidget {
   }
 }
 
-class _ProjectCard extends StatelessWidget {
+class _ProjectCard extends ConsumerWidget {
   const _ProjectCard({required this.project});
 
   final GatewayProjectView project;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
@@ -215,7 +215,7 @@ class _ProjectCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => _openProject(context, project),
+          onTap: () => _openProject(context, project, ref),
           borderRadius: BorderRadius.circular(14),
           child: Container(
             padding: const EdgeInsets.all(14),
@@ -292,7 +292,8 @@ class _ProjectCard extends StatelessWidget {
   }
 }
 
-void _openProject(BuildContext context, GatewayProjectView project) {
+void _openProject(BuildContext context, GatewayProjectView project, WidgetRef ref) {
+  ref.read(projectStoreProvider.notifier).selectProject(project.id);
   Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => ProjectDetailPage(project: project),

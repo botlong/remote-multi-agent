@@ -68,15 +68,14 @@ class ImagePartView extends ConsumerWidget {
   }
 
   /// Resolve the image URL. For server file paths, construct the
-  /// `/files/read?path=<path>` endpoint URL.
+  /// `/files/raw?path=<path>` endpoint URL.
   String _resolveUrl(WidgetRef ref) {
     if (!part.isFilePath) return part.image;
 
-    // Build URL from server base
     final settings = ref.read(settingsControllerProvider);
     final base = settings.baseUrl.replaceAll(RegExp(r'/$'), '');
     final encodedPath = Uri.encodeComponent(part.image);
-    return '$base/files/read?path=$encodedPath';
+    return '$base/files/raw?path=$encodedPath';
   }
 
   /// Decode a `data:image/...;base64,...` URL into bytes.

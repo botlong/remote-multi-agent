@@ -72,3 +72,25 @@ test('runJsonCli with keepStdinOpen keeps stdin writable after initial prompt', 
   });
   assert.equal(result.exitCode, 0);
 });
+
+test('runJsonCli does not duplicate assistant snapshots after text deltas', async () => {
+  const script = [
+    'console.log(JSON.stringify({delta:"Hello"}));',
+    'console.log(JSON.stringify({type:"assistant",message:{content:[{text:"Hello"}]}}));',
+    'process.exit(0);',
+  ].join('');
+  const chunks = [];
+  const result = await new Promise((resolve) => {
+    runJsonCli({
+      command: { command: process.execPath },
+      args: ['-e', script],
+      cwd: process.cwd(),
+      stdin: null,
+      onEvent: () => {},
+      onText: (text) => chunks.push(text),
+      onExit: resolve,
+    });
+  });
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(chunks, ['Hello']);
+});

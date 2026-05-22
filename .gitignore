@@ -48,3 +48,25 @@ app.*.map.json
 analyze.txt
 gateway/.data/
 gateway/node_modules/
+
+# Secrets / credentials
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env.test.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.p8
+credentials.json
+service-account.json
+service-account-*.json
+firebase-admin*.json
+google-services.json
+GoogleService-Info.plist

@@ -64,6 +64,7 @@ class SseClient {
   bool _disposed = false;
   int _attempt = 0;
   SseState _lastState = SseState.connecting;
+  String? _lastEventId;
 
   // Stream subscription for the active response body.
   StreamSubscription<List<int>>? _responseSub;
@@ -107,6 +108,9 @@ class SseClient {
       request.headers.set('Cache-Control', 'no-cache');
       if (_config.bearerToken != null && _config.bearerToken!.isNotEmpty) {
         request.headers.set('Authorization', 'Bearer ${_config.bearerToken}');
+      }
+      if (_lastEventId != null) {
+        request.headers.set('Last-Event-ID', _lastEventId!);
       }
 
       response = await request.close();
@@ -193,8 +197,8 @@ class SseClient {
               if (dataBuffer.isNotEmpty) dataBuffer.writeln();
               dataBuffer.write(value);
             case 'id':
+              if (value.isNotEmpty) _lastEventId = value;
             case 'retry':
-              // Ignored for now.
               break;
           }
         }

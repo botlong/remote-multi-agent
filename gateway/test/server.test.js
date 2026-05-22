@@ -14,6 +14,9 @@ test('gateway exposes projects, sessions, messages, and SSE events', async (t) =
   const dataFile = path.join(root, 'store.json');
   const projectDir = path.join(root, 'project');
   await fs.mkdir(projectDir);
+  const imagePath = path.join(root, 'pixel.png');
+  const imageBytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  await fs.writeFile(imagePath, imageBytes);
 
   const adapters = new FakeRegistry();
   const server = await createGatewayServer({ dataFile, adapters });
@@ -51,6 +54,18 @@ test('gateway exposes projects, sessions, messages, and SSE events', async (t) =
   const messages = await getJson(`${base}/sessions/${session.id}/messages`);
   assert.equal(messages.length, 2);
   assert.equal(messages[1].parts[0].text, 'fake response');
+
+  const exported = await getJson(`${base}/sessions/${session.id}/export?format=json`);
+  assert.equal(exported.session.id, session.id);
+  assert.equal(exported.messages.length, 2);
+  assert.equal(exported.messages[1].parts[0].text, 'fake response');
+
+  const rawImage = await getRaw(`${base}/files/raw?path=${encodeURIComponent(imagePath)}`);
+  assert.equal(rawImage.contentType, 'image/png');
+  assert.deepEqual(rawImage.body, imageBytes);
+
+  const textFile = await getJson(`${base}/files/read?path=${encodeURIComponent(imagePath)}`);
+  assert.equal(typeof textFile.content, 'string');
 });
 
 test('gateway proxies OpenCode sessions through server API and SSE', async (t) => {
@@ -100,6 +115,7 @@ test('gateway proxies OpenCode sessions through server API and SSE', async (t) =
   assert(received.some((event) => event.type === 'message.completed'));
   assert.equal(fakeOpenCode.sentMessages[0].providerID, 'anthropic');
   assert.equal(fakeOpenCode.sentMessages[0].modelID, 'claude-sonnet-4');
+  assert.equal(fakeOpenCode.sentMessages[0].directory, projectDir);
   assert.deepEqual(fakeOpenCode.sentMessages[0].parts, [
     { type: 'text', text: 'hello' },
     { type: 'file', path: 'README.md' },
@@ -506,6 +522,16 @@ async function getJson(url) {
   assert.equal(response.ok, true, text);
   if (!text) return null;
   return JSON.parse(text);
+}
+
+async function getRaw(url) {
+  const response = await fetch(url);
+  const body = Buffer.from(await response.arrayBuffer());
+  assert.equal(response.ok, true);
+  return {
+    contentType: response.headers.get('content-type'),
+    body,
+  };
 }
 
 async function postJson(url, body) {

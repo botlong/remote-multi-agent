@@ -212,6 +212,43 @@ class GatewayClient {
     return res.data ?? const <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> approveChanges(
+    String sessionId, {
+    String? message,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/sessions/${_path(sessionId)}/approve',
+      data: <String, dynamic>{
+        if (message != null) 'message': message,
+      },
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> rejectChanges(String sessionId) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/sessions/${_path(sessionId)}/reject',
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> handoffSession({
+    required String sessionId,
+    required String agentId,
+    String? prompt,
+    String? modelId,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/sessions/${_path(sessionId)}/handoff',
+      data: <String, dynamic>{
+        'agentId': agentId,
+        if (prompt != null) 'prompt': prompt,
+        if (modelId != null) 'modelId': modelId,
+      },
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
   Future<void> deleteMessage(String sessionId, String messageId) async {
     await _dio.delete<dynamic>(
       '/sessions/${_path(sessionId)}/messages/${_path(messageId)}',

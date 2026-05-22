@@ -132,7 +132,7 @@ class JsonStore {
   async updateSession(sessionId, patch) {
     const session = this.getSession(sessionId);
     if (!session) return null;
-    for (const key of ['title', 'modelId', 'status', 'agentSessionId']) {
+    for (const key of ['title', 'modelId', 'status', 'agentSessionId', 'agentId']) {
       if (Object.prototype.hasOwnProperty.call(patch, key)) {
         session[key] = patch[key];
       }

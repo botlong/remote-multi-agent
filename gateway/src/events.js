@@ -9,9 +9,10 @@ class EventBus {
     // (e.g. after the gateway restarted or a brief network drop) can catch
     // up on anything emitted while they were disconnected.
     this.replay = new Map();
+    this._nextEventId = 1;
   }
 
-  subscribe(sessionId, response) {
+  subscribe(sessionId, response, lastEventId) {
     let set = this.subscribers.get(sessionId);
     if (!set) {
       set = new Set();
@@ -24,8 +25,12 @@ class EventBus {
     // everything that happened before it connected.
     const buffered = this.replay.get(sessionId);
     if (buffered && buffered.length > 0) {
+      const startAfter = lastEventId ? parseInt(lastEventId, 10) : 0;
       for (const event of buffered) {
-        response.write(`event: gateway\ndata: ${JSON.stringify(event)}\n\n`);
+        // If client sent Last-Event-ID, only replay events after that ID
+        if (startAfter && event._eventId && event._eventId <= startAfter) continue;
+        const id = event._eventId || '';
+        response.write(`id: ${id}\nevent: gateway\ndata: ${JSON.stringify(event)}\n\n`);
       }
     }
 
@@ -36,6 +41,9 @@ class EventBus {
   }
 
   emit(event) {
+    // Assign a monotonic event ID for Last-Event-ID reconnect support
+    event._eventId = this._nextEventId++;
+
     // Always append to the replay buffer, even if there are no current
     // subscribers — that way a client that connects later still sees it.
     let buf = this.replay.get(event.sessionId);
@@ -48,7 +56,7 @@ class EventBus {
 
     const subscribers = this.subscribers.get(event.sessionId);
     if (!subscribers || subscribers.size === 0) return;
-    const payload = `event: gateway\ndata: ${JSON.stringify(event)}\n\n`;
+    const payload = `id: ${event._eventId}\nevent: gateway\ndata: ${JSON.stringify(event)}\n\n`;
     for (const response of subscribers) {
       response.write(payload);
     }

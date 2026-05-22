@@ -109,8 +109,9 @@ List<_FileDiff> _parseDiff(String raw) {
 
 /// GitHub-style git diff viewer with file grouping, line numbers, and stats.
 class DiffPage extends ConsumerStatefulWidget {
-  const DiffPage({super.key, required this.sessionId});
+  const DiffPage({super.key, required this.sessionId, this.allowApproval = true});
   final String sessionId;
+  final bool allowApproval;
 
   @override
   ConsumerState<DiffPage> createState() => _DiffPageState();
@@ -184,7 +185,71 @@ class _DiffPageState extends ConsumerState<DiffPage> {
               : _diff != null && _diff!.isEmpty
                   ? _EmptyView()
                   : _DiffContent(diff: _diff!),
+      bottomNavigationBar: widget.allowApproval &&
+              _diff != null &&
+              _diff!.isNotEmpty
+          ? _ApprovalBar(
+              onApprove: _approve,
+              onReject: _reject,
+            )
+          : null,
     );
+  }
+
+  Future<void> _approve() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final client = ref.read(gatewayClientProvider);
+      final result = await client.approveChanges(widget.sessionId);
+      messenger.showSnackBar(
+        SnackBar(content: Text(result['output'] as String? ?? 'Changes committed')),
+      );
+      _loadDiff();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Approve failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _reject() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reject changes?'),
+        content: const Text(
+          'This will discard ALL uncommitted changes in this project directory. '
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Reject & Discard'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final client = ref.read(gatewayClientProvider);
+      await client.rejectChanges(widget.sessionId);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Changes discarded')),
+      );
+      _loadDiff();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Reject failed: $e')),
+      );
+    }
   }
 }
 
@@ -665,5 +730,62 @@ class _DiffLineRow extends StatelessWidget {
           isDark ? const Color(0xFFD0D7DE) : const Color(0xFF24292F),
         );
     }
+  }
+}
+
+// ─── Approval bar ─────────────────────────────────────────────────────
+
+class _ApprovalBar extends StatelessWidget {
+  const _ApprovalBar({required this.onApprove, required this.onReject});
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(
+          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onReject,
+              icon: const Icon(Icons.close, size: 18),
+              label: const Text('Reject'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: scheme.error,
+                side: BorderSide(color: scheme.error.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: onApprove,
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text('Approve & Commit'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF2DA44E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

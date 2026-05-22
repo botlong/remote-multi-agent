@@ -110,6 +110,7 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
           request,
           response,
           segments,
+          url,
           store,
           registry,
           bus,
@@ -280,6 +281,7 @@ async function handleSessions({
   request,
   response,
   segments,
+  url,
   store,
   registry,
   bus,
@@ -407,7 +409,8 @@ async function handleSessions({
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
-    const unsubscribe = bus.subscribe(session.id, response);
+    const lastEventId = request.headers['last-event-id'] || url.searchParams.get('lastEventId');
+    const unsubscribe = bus.subscribe(session.id, response, lastEventId);
     request.on('close', unsubscribe);
     return;
   }
@@ -472,12 +475,42 @@ async function handleSessions({
   throw httpError(404, 'not found');
 }
 
+async function handleLocalCommand(text, session, store, bus) {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('/')) return false;
+  const command = trimmed.split(/\s+/)[0].toLowerCase();
+  switch (command) {
+    case '/clear': {
+      if (store.data && store.data.messagesBySession) {
+        store.data.messagesBySession[session.id] = [];
+        await store.save();
+      }
+      const msg = createTextMessage({ sessionId: session.id, role: 'assistant', text: 'Conversation cleared.' });
+      await store.appendMessage(session.id, msg);
+      emit(bus, 'message.created', session, { message: msg }, msg);
+      emit(bus, 'message.completed', session, { message: msg }, msg);
+      return true;
+    }
+    case '/status': {
+      const info = `Session: ${session.id}\nAgent: ${session.agentId}\nModel: ${session.modelId || 'default'}\nDirectory: ${session.directory || 'none'}\nStatus: ${session.status}`;
+      const msg = createTextMessage({ sessionId: session.id, role: 'assistant', text: info });
+      await store.appendMessage(session.id, msg);
+      emit(bus, 'message.created', session, { message: msg }, msg);
+      emit(bus, 'message.completed', session, { message: msg }, msg);
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
 async function startTurn({ session, text, parts = [], store, registry, bus, activeRuns, pendingTurns }) {
   if (activeRuns.has(session.id)) {
     throw httpError(409, 'session already running');
   }
   const adapter = registry.get(session.agentId);
   if (!adapter) throw httpError(400, `unknown agent: ${session.agentId}`);
+  if (await handleLocalCommand(text, session, store, bus)) return;
   console.log(`[startTurn] agent=${session.agentId} model=${session.modelId} dir=${session.directory} prompt=${text.slice(0,80)}`);
   const canRunNative = Boolean(adapter.runNative && session.agentSessionId);
 
@@ -660,6 +693,19 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
       );
     }
     emit(bus, 'session.updated', updated, { session: updated });
+
+    // AI auto-title after first successful reply
+    if (exitCode === 0 && !aborted && assistantMessage) {
+      const refreshed2 = store.getSession(session.id);
+      const isDefault = refreshed2 && /^(Codex|Claude Code|OpenCode)\s+session$/i.test(refreshed2.title);
+      if (isDefault) {
+        const userSnippet = text.trim().replace(/\s+/g, ' ').slice(0, 50);
+        const title = userSnippet + (text.trim().length > 50 ? '\u2026' : '');
+        store.updateSession(session.id, { title }).then(u => {
+          if (u) emit(bus, 'session.updated', u, { session: u });
+        }).catch(() => {});
+      }
+    }
 
     // Drain any follow-up messages the user queued during this turn.
     const queue = pendingTurns && pendingTurns.get(session.id);

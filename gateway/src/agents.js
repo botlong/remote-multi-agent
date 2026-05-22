@@ -431,10 +431,19 @@ class ClaudeCodeAdapter {
   }
 
   run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
+    const isSlashCommand = prompt.trim().startsWith('/');
+    const withResume = Boolean(session.agentSessionId);
+    if (isSlashCommand && !withResume) {
+      onEvent({
+        type: 'command.updated',
+        data: { source: 'claude-code', eventType: 'slash-command', command: prompt.trim() },
+        raw: { command: prompt.trim(), hasSession: false },
+      });
+    }
     return this._runOnce({
       session,
       prompt,
-      withResume: Boolean(session.agentSessionId),
+      withResume,
       onEvent,
       onText,
       onAgentSessionId,
