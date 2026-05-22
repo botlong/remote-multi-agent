@@ -67,7 +67,11 @@ class GatewayChatState {
   final TokenUsage? usage;
 
   String get sessionTitle => session?.title ?? '';
-  Iterable<Message> get orderedMessages => messages.values;
+  Iterable<Message> get orderedMessages {
+    final list = messages.values.toList(growable: false);
+    list.sort((a, b) => (a.createdAtMs ?? 0).compareTo(b.createdAtMs ?? 0));
+    return list;
+  }
   List<Message> get items => messages.values.toList(growable: false);
 
   static GatewayChatState initial(String sessionId) => GatewayChatState(
@@ -131,12 +135,23 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
           next[message.id] = message;
           continue;
         }
-        // Prefer richer SSE-built parts, but always accept REST metadata so a
-        // reconnect can move stale running messages to completed/error.
-        final parts = message.parts.length > existing.parts.length
-            ? message.parts
-            : existing.parts;
-        next[message.id] = message.copyWith(parts: parts);
+        // Per-part merge: keep whichever version has more content so REST
+        // snapshots don't clobber in-flight SSE deltas, but new parts from
+        // REST (e.g. tool calls) are still accepted.
+        final mergedParts = Map<String, Part>.from(message.parts);
+        for (final entry in existing.parts.entries) {
+          final restPart = mergedParts[entry.key];
+          if (restPart == null) {
+            mergedParts[entry.key] = entry.value;
+          } else {
+            final existingLen = _partTextLength(entry.value);
+            final restLen = _partTextLength(restPart);
+            if (existingLen > restLen) {
+              mergedParts[entry.key] = entry.value;
+            }
+          }
+        }
+        next[message.id] = message.copyWith(parts: mergedParts);
       }
       state = state.copyWith(
         session: state.session ?? session,
@@ -324,11 +339,13 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
     );
   }
 
+  static const _maxTerminalLines = 500;
+
   void _onCommandUpdated(GatewayEvent event) {
     final stream = event.data['stream'] as String? ?? 'stdout';
     final text = event.data['text'] as String?;
     if (text == null || text.isEmpty) return;
-    final next = <TerminalLine>[
+    var next = <TerminalLine>[
       ...state.terminalLines,
       TerminalLine(
         stream: stream,
@@ -336,6 +353,9 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         timestampMs: event.timestampMs,
       ),
     ];
+    if (next.length > _maxTerminalLines) {
+      next = next.sublist(next.length - _maxTerminalLines);
+    }
     state = state.copyWith(terminalLines: next);
   }
 
@@ -487,6 +507,12 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
       : value is Map
           ? (value['message'] as String?)
           : value?.toString();
+
+  static int _partTextLength(Part p) => switch (p) {
+        TextPart(:final text) => text.length,
+        ReasoningPart(:final text) => text.length,
+        _ => 0,
+      };
 
   @override
   void dispose() {

@@ -250,11 +250,12 @@ class SseClient {
     switch (type) {
       case 'message.updated':
       case 'message.part.updated':
-      case 'message.part.delta':
       case 'session.updated':
       case 'session.error':
       case 'session.idle':
         return true;
+      // Delta events are incremental — replaying them after reconnect
+      // would duplicate text (client fetches full state via REST).
       default:
         return false;
     }

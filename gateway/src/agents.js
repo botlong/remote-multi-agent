@@ -1075,7 +1075,10 @@ function suffixDelta(key, fullText, state) {
   const previous = state.lastFullTextByKey.get(key) || '';
   state.lastFullTextByKey.set(key, fullText);
   if (!previous) return fullText;
-  return fullText.startsWith(previous) ? fullText.slice(previous.length) : fullText;
+  if (fullText.startsWith(previous)) return fullText.slice(previous.length);
+  // Non-prefix case: agent sent reformatted/reset text. Skip to avoid
+  // emitting the entire text as a delta (which would duplicate content).
+  return '';
 }
 
 function contentArrayText(content) {

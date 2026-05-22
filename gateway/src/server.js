@@ -446,7 +446,7 @@ async function handleSessions({
         if (part.type === 'text' && part.text) {
           md += `${part.text}\n\n`;
         } else if (part.type === 'tool') {
-          md += `> **Tool:** ${part.toolName || 'unknown'}`;
+          md += `> **Tool:** ${part.tool || part.name || 'unknown'}`;
           if (part.output) md += `\n> \`\`\`\n> ${part.output.slice(0, 500)}\n> \`\`\``;
           md += '\n\n';
         }
@@ -675,18 +675,22 @@ async function startTurn({ session, text, parts = [], store, registry, bus, acti
       assistantMessage || {},
     );
 
+    // If aborted, the /abort endpoint already set session status to 'idle'
+    // and emitted session.updated. Skip here to avoid a race that overwrites
+    // the status with 'error'.
+    if (aborted) return;
+
     const updated = await store.updateSession(session.id, {
-      status: exitCode === 0 || aborted ? 'idle' : 'error',
+      status: exitCode === 0 ? 'idle' : 'error',
       raw: {
         lastExitCode: exitCode,
         lastError: error || null,
-        lastAborted: aborted || null,
       },
     });
     if (!updated) return;
-    if (!aborted && exitCode === 0) {
+    if (exitCode === 0) {
       emit(bus, 'session.completed', updated, { session: updated });
-    } else if (!aborted) {
+    } else {
       emit(
         bus,
         'session.error',

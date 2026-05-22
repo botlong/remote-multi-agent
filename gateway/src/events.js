@@ -44,15 +44,20 @@ class EventBus {
     // Assign a monotonic event ID for Last-Event-ID reconnect support
     event._eventId = this._nextEventId++;
 
-    // Always append to the replay buffer, even if there are no current
-    // subscribers — that way a client that connects later still sees it.
-    let buf = this.replay.get(event.sessionId);
-    if (!buf) {
-      buf = [];
-      this.replay.set(event.sessionId, buf);
+    // Delta events are incremental — replaying them after reconnect would
+    // duplicate text (the client already fetches full messages via REST).
+    const skipReplay = event.type === 'message.delta' ||
+      event.type === 'message.part.delta' ||
+      event.type === 'command.updated';
+    if (!skipReplay) {
+      let buf = this.replay.get(event.sessionId);
+      if (!buf) {
+        buf = [];
+        this.replay.set(event.sessionId, buf);
+      }
+      buf.push(event);
+      if (buf.length > REPLAY_BUFFER_SIZE) buf.splice(0, buf.length - REPLAY_BUFFER_SIZE);
     }
-    buf.push(event);
-    if (buf.length > REPLAY_BUFFER_SIZE) buf.splice(0, buf.length - REPLAY_BUFFER_SIZE);
 
     const subscribers = this.subscribers.get(event.sessionId);
     if (!subscribers || subscribers.size === 0) return;

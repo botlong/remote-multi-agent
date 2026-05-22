@@ -44,6 +44,15 @@ class JsonStore {
     return run;
   }
 
+  /** Debounced save — coalesces rapid writes during streaming (500ms). */
+  saveSoon() {
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      this.save().catch(() => {});
+    }, 500);
+  }
+
   async writeSnapshot() {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     const temp = `${this.file}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -172,7 +181,8 @@ class JsonStore {
     if (index === -1) return null;
     list[index] = updater(list[index]);
     await this.touchSession(sessionId, false);
-    await this.save();
+    // Use debounced save — during streaming this is called per-token; coalesce.
+    this.saveSoon();
     return list[index];
   }
 
@@ -228,27 +238,25 @@ function createTextMessage({
 }
 
 function appendTextToMessage(message, delta) {
-  const next = structuredClone(message);
-  if (!next.parts || next.parts.length === 0) {
-    next.parts = [
+  if (!message.parts || message.parts.length === 0) {
+    message.parts = [
       {
-        id: `${next.id}_text`,
-        messageID: next.id,
-        sessionID: next.sessionID,
+        id: `${message.id}_text`,
+        messageID: message.id,
+        sessionID: message.sessionID,
         type: 'text',
         text: '',
       },
     ];
   }
-  next.parts[0].text = `${next.parts[0].text || ''}${delta}`;
-  return next;
+  message.parts[0].text = `${message.parts[0].text || ''}${delta}`;
+  return message;
 }
 
 function appendToolPartToMessage(message, toolCall) {
-  const next = structuredClone(message);
-  const partId = `${next.id}_tool_${toolCall.callId || toolCall.toolUseId || crypto.randomUUID()}`;
+  const partId = `${message.id}_tool_${toolCall.callId || toolCall.toolUseId || crypto.randomUUID()}`;
   // Check if this tool part already exists (update vs create).
-  const existingIdx = next.parts.findIndex(
+  const existingIdx = message.parts.findIndex(
     (p) => p.type === 'tool' && p.toolCallId === (toolCall.callId || toolCall.toolUseId),
   );
   const rawInput = toolCall.input;
@@ -257,8 +265,8 @@ function appendToolPartToMessage(message, toolCall) {
     : (rawInput && typeof rawInput === 'object' ? rawInput : null);
   const toolPart = {
     id: partId,
-    messageID: next.id,
-    sessionID: next.sessionID,
+    messageID: message.id,
+    sessionID: message.sessionID,
     type: 'tool',
     tool: toolCall.name,
     name: toolCall.name,
@@ -269,7 +277,7 @@ function appendToolPartToMessage(message, toolCall) {
   };
   if (existingIdx >= 0) {
     // Merge: keep existing input if new one is empty, append output.
-    const existing = next.parts[existingIdx];
+    const existing = message.parts[existingIdx];
     toolPart.id = existing.id;
     if (!toolPart.input && existing.input) toolPart.input = existing.input;
     if (existing.output && toolPart.output) {
@@ -277,21 +285,20 @@ function appendToolPartToMessage(message, toolCall) {
     } else if (existing.output) {
       toolPart.output = existing.output;
     }
-    next.parts[existingIdx] = toolPart;
+    message.parts[existingIdx] = toolPart;
   } else {
-    next.parts.push(toolPart);
+    message.parts.push(toolPart);
   }
-  return next;
+  return message;
 }
 
 function completeMessage(message, status = 'completed') {
-  const next = structuredClone(message);
-  next.status = status;
-  next.time = {
-    ...(next.time || {}),
+  message.status = status;
+  message.time = {
+    ...(message.time || {}),
     completed: Date.now(),
   };
-  return next;
+  return message;
 }
 
 async function normalizeDirectory(directory) {
