@@ -457,7 +457,8 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 DropdownButtonFormField<String>(
-                  initialValue: selectedAgent,
+                  // ignore: deprecated_member_use
+                  value: selectedAgent,
                   decoration: const InputDecoration(
                     labelText: 'Target Agent',
                     border: OutlineInputBorder(),
