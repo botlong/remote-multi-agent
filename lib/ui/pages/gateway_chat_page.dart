@@ -349,9 +349,9 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   List<GatewayCommandView> _filteredCommands(
     List<GatewayCommandView> commands,
   ) {
-    final query = _input.text.trim();
+    final query = _input.text.trim().toLowerCase();
     if (query == '/' || query == r'$') return commands;
-    return commands.where((c) => c.name.startsWith(query)).toList();
+    return commands.where((c) => c.name.toLowerCase().contains(query)).toList();
   }
 
   Future<List<GatewayCommandView>> _commandsFuture(
@@ -384,6 +384,16 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     final text = _input.text.trim();
     if (text.isEmpty && _attachments.isEmpty) return;
     HapticFeedback.lightImpact();
+
+    // For slash commands, try interception BEFORE clearing input
+    if (text.startsWith('/')) {
+      if (_tryInterceptCommand(text)) {
+        _input.clear();
+        setState(() => _attachments.clear());
+        return;
+      }
+    }
+
     _input.clear();
     final pendingAttachments = List<Attachment>.from(_attachments);
     setState(() => _attachments.clear());
@@ -391,8 +401,6 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
       final notifier =
           ref.read(gatewayChatProvider(widget.session.id).notifier);
       if (text.startsWith('/')) {
-        // Command interception: handle locally if possible
-        if (_tryInterceptCommand(text)) return;
         await notifier.sendSlashCommand(text);
       } else {
         await notifier.sendMessage(
