@@ -10,15 +10,34 @@ import 'gateway_ui_adapters.dart';
 import 'project_detail_page.dart';
 import 'search_page.dart';
 
-class ProjectListPage extends ConsumerWidget {
+class ProjectListPage extends ConsumerStatefulWidget {
   const ProjectListPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProjectListPage> createState() => _ProjectListPageState();
+}
+
+class _ProjectListPageState extends ConsumerState<ProjectListPage> {
+  bool _autoNavigated = false;
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(projectStoreProvider);
     final projects = readProjects(state);
     final loading = readLoading(state);
     final error = readError(state);
+
+    // Auto-navigate when there's exactly one project (skip on first run).
+    if (!_autoNavigated && !loading && projects.length == 1) {
+      final settings = ref.read(settingsControllerProvider);
+      if (settings.lastProjectId.isNotEmpty) {
+        _autoNavigated = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _openProject(context, projects.first, ref);
+        });
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(

@@ -17,6 +17,10 @@ class AppSettings {
     required this.providerId,
     required this.modelId,
     this.themeMode = ThemeMode.system,
+    this.lastAgentId = '',
+    this.lastModelId = '',
+    this.lastSessionId = '',
+    this.lastProjectId = '',
   });
 
   final String baseUrl;
@@ -24,6 +28,12 @@ class AppSettings {
   final String providerId;
   final String modelId;
   final ThemeMode themeMode;
+
+  /// Last-used preferences for quick restore.
+  final String lastAgentId;
+  final String lastModelId;
+  final String lastSessionId;
+  final String lastProjectId;
 
   bool get isConfigured =>
       baseUrl.isNotEmpty && providerId.isNotEmpty && modelId.isNotEmpty;
@@ -34,6 +44,10 @@ class AppSettings {
     String? providerId,
     String? modelId,
     ThemeMode? themeMode,
+    String? lastAgentId,
+    String? lastModelId,
+    String? lastSessionId,
+    String? lastProjectId,
   }) =>
       AppSettings(
         baseUrl: baseUrl ?? this.baseUrl,
@@ -41,6 +55,10 @@ class AppSettings {
         providerId: providerId ?? this.providerId,
         modelId: modelId ?? this.modelId,
         themeMode: themeMode ?? this.themeMode,
+        lastAgentId: lastAgentId ?? this.lastAgentId,
+        lastModelId: lastModelId ?? this.lastModelId,
+        lastSessionId: lastSessionId ?? this.lastSessionId,
+        lastProjectId: lastProjectId ?? this.lastProjectId,
       );
 
   static const empty = AppSettings(
@@ -66,6 +84,10 @@ class SettingsController extends StateNotifier<AppSettings> {
       themeMode: themeModeIndex != null && themeModeIndex < ThemeMode.values.length
           ? ThemeMode.values[themeModeIndex]
           : ThemeMode.system,
+      lastAgentId: p.getString(_kLastAgent) ?? '',
+      lastModelId: p.getString(_kLastModel) ?? '',
+      lastSessionId: p.getString(_kLastSession) ?? '',
+      lastProjectId: p.getString(_kLastProject) ?? '',
     );
   }
 
@@ -77,7 +99,36 @@ class SettingsController extends StateNotifier<AppSettings> {
       _prefs.setString(_kProvider, next.providerId),
       _prefs.setString(_kModel, next.modelId),
       _prefs.setInt(_kThemeMode, next.themeMode.index),
+      _prefs.setString(_kLastAgent, next.lastAgentId),
+      _prefs.setString(_kLastModel, next.lastModelId),
+      _prefs.setString(_kLastSession, next.lastSessionId),
+      _prefs.setString(_kLastProject, next.lastProjectId),
     ]);
+  }
+
+  /// Update last-used preferences. Only saves the keys that changed.
+  Future<void> setLastUsed({
+    String? agentId,
+    String? modelId,
+    String? sessionId,
+    String? projectId,
+  }) async {
+    state = state.copyWith(
+      lastAgentId: agentId ?? state.lastAgentId,
+      lastModelId: modelId ?? state.lastModelId,
+      lastSessionId: sessionId ?? state.lastSessionId,
+      lastProjectId: projectId ?? state.lastProjectId,
+    );
+    final futures = <Future<bool>>[];
+    if (agentId != null) futures.add(_prefs.setString(_kLastAgent, agentId));
+    if (modelId != null) futures.add(_prefs.setString(_kLastModel, modelId));
+    if (sessionId != null) {
+      futures.add(_prefs.setString(_kLastSession, sessionId));
+    }
+    if (projectId != null) {
+      futures.add(_prefs.setString(_kLastProject, projectId));
+    }
+    await Future.wait(futures);
   }
 
   static const _kBaseUrl = 'oc.baseUrl';
@@ -85,6 +136,10 @@ class SettingsController extends StateNotifier<AppSettings> {
   static const _kProvider = 'oc.providerId';
   static const _kModel = 'oc.modelId';
   static const _kThemeMode = 'oc.themeMode';
+  static const _kLastAgent = 'oc.lastAgentId';
+  static const _kLastModel = 'oc.lastModelId';
+  static const _kLastSession = 'oc.lastSessionId';
+  static const _kLastProject = 'oc.lastProjectId';
 }
 
 /// Top-level provider. The async dependency is solved with [FutureProvider],

@@ -106,12 +106,13 @@ const OPENCODE_COMMANDS = [
 ];
 
 class AgentRegistry {
-  constructor({ openCodeServer } = {}) {
+  constructor({ openCodeServer, profileStore } = {}) {
+    this.profileStore = profileStore || null;
     this.adapters = new Map(
       [
-        new CodexAdapter(),
-        new ClaudeCodeAdapter(),
-        new OpenCodeAdapter({ server: openCodeServer }),
+        new CodexAdapter({ profileStore }),
+        new ClaudeCodeAdapter({ profileStore }),
+        new OpenCodeAdapter({ server: openCodeServer, profileStore }),
       ].map((adapter) => [adapter.id, adapter]),
     );
   }
@@ -134,10 +135,11 @@ class AgentRegistry {
 }
 
 class CodexAdapter {
-  constructor() {
+  constructor({ profileStore } = {}) {
     this.id = 'codex';
     this.displayName = 'Codex';
     this.command = resolveCodexCommand();
+    this.profileStore = profileStore || null;
   }
 
   async metadata(projectDirectory) {
@@ -190,12 +192,21 @@ class CodexAdapter {
 
   run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
     const args = buildCodexArgs(session);
+
+    const profileKey = this.profileStore?.getKeyForProvider('openai');
+    const extraEnv = {};
+    if (profileKey?.key) {
+      extraEnv.OPENAI_API_KEY = profileKey.key;
+      if (profileKey.baseUrl) extraEnv.OPENAI_BASE_URL = profileKey.baseUrl;
+    }
+
     // Codex `exec ... -` reads the prompt from stdin until EOF; keeping
     // stdin open would block codex from starting work.
     return runJsonCli({
       command: this.command,
       args,
       cwd: session.directory,
+      env: extraEnv,
       stdin: prompt,
       agentId: this.id,
       onEvent,
@@ -323,10 +334,11 @@ async function readClaudeOfficialSettings() {
 }
 
 class ClaudeCodeAdapter {
-  constructor() {
+  constructor({ profileStore } = {}) {
     this.id = 'claude-code';
     this.displayName = 'Claude Code';
     this.command = resolveClaudeCommand();
+    this.profileStore = profileStore || null;
   }
 
   async metadata(projectDirectory) {
@@ -365,6 +377,13 @@ class ClaudeCodeAdapter {
     //      d) Official Claude settings (~/.claude/settings.json)
     let apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
     let baseUrl = process.env.ANTHROPIC_BASE_URL;
+    if (!apiKey) {
+      const profileKey = this.profileStore?.getKeyForProvider('anthropic');
+      if (profileKey?.key) {
+        apiKey = profileKey.key;
+        if (!baseUrl && profileKey.baseUrl) baseUrl = profileKey.baseUrl;
+      }
+    }
     if (!apiKey) {
       const ccs = await readCcSwitchClaudeProvider();
       if (ccs) {
@@ -472,6 +491,13 @@ class ClaudeCodeAdapter {
     }
     args.push(prompt);
 
+    const profileKey = this.profileStore?.getKeyForProvider('anthropic');
+    const extraEnv = {};
+    if (profileKey?.key) {
+      extraEnv.ANTHROPIC_API_KEY = profileKey.key;
+      if (profileKey.baseUrl) extraEnv.ANTHROPIC_BASE_URL = profileKey.baseUrl;
+    }
+
     let retried = false;
     const handle = {};
     const wrappedExit = (result) => {
@@ -503,6 +529,7 @@ class ClaudeCodeAdapter {
       command: this.command,
       args,
       cwd: session.directory,
+      env: extraEnv,
       stdin: null,
       agentId: this.id,
       onEvent,
@@ -516,11 +543,15 @@ class ClaudeCodeAdapter {
 }
 
 class OpenCodeAdapter {
-  constructor({ command, server } = {}) {
+  constructor({ command, server, profileStore } = {}) {
     this.id = 'opencode';
     this.displayName = 'OpenCode';
     this.command = command || resolveOpenCodeCommand();
-    this.server = server || new OpenCodeServerManager({ command: this.command });
+    this.profileStore = profileStore || null;
+    this.server = server || new OpenCodeServerManager({
+      command: this.command,
+      extraEnv: this._buildProfileEnv(),
+    });
   }
 
   async metadata(projectDirectory) {
@@ -714,10 +745,14 @@ class OpenCodeAdapter {
     if (session.modelId) args.push('--model', session.modelId);
     if (session.agentSessionId) args.push('--session', session.agentSessionId);
     args.push(prompt);
+
+    const extraEnv = this._buildProfileEnv();
+
     return runJsonCli({
       command: this.command,
       args,
       cwd: session.directory,
+      env: extraEnv,
       stdin: null,
       agentId: this.id,
       onEvent,
@@ -725,6 +760,26 @@ class OpenCodeAdapter {
       onAgentSessionId,
       onExit,
     });
+  }
+
+  _buildProfileEnv() {
+    const extraEnv = {};
+    const anthropicKey = this.profileStore?.getKeyForProvider('anthropic');
+    if (anthropicKey?.key) {
+      extraEnv.ANTHROPIC_API_KEY = anthropicKey.key;
+      if (anthropicKey.baseUrl) extraEnv.ANTHROPIC_BASE_URL = anthropicKey.baseUrl;
+    }
+    const openaiKey = this.profileStore?.getKeyForProvider('openai');
+    if (openaiKey?.key) {
+      extraEnv.OPENAI_API_KEY = openaiKey.key;
+      if (openaiKey.baseUrl) extraEnv.OPENAI_BASE_URL = openaiKey.baseUrl;
+    }
+    const googleKey = this.profileStore?.getKeyForProvider('google');
+    if (googleKey?.key) {
+      extraEnv.GOOGLE_API_KEY = googleKey.key;
+      if (googleKey.baseUrl) extraEnv.GOOGLE_BASE_URL = googleKey.baseUrl;
+    }
+    return extraEnv;
   }
 
   close() {
@@ -905,6 +960,7 @@ function runJsonCli({
   command,
   args,
   cwd,
+  env,
   stdin,
   keepStdinOpen = false,
   agentId,
@@ -917,7 +973,7 @@ function runJsonCli({
 }) {
   let child;
   try {
-    child = spawnCli(command, args, { cwd });
+    child = spawnCli(command, args, { cwd, env });
   } catch (error) {
     onExit({
       exitCode: -1,

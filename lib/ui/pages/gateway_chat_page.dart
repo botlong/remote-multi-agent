@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/message.dart';
+import '../../models/part.dart';
 import '../../state/gateway_providers.dart';
 import '../../state/notification_service.dart';
+import '../../state/settings_store.dart';
 import '../widgets/agent_activity_bar.dart';
 import '../widgets/agent_badge.dart';
 import '../widgets/attachment_picker.dart';
+import '../widgets/directory_picker.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/model_picker.dart';
 import '../widgets/session_status_chip.dart';
 import 'diff_page.dart';
 import 'gateway_ui_adapters.dart';
@@ -52,6 +57,11 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setActiveSessionId(widget.session.id);
       ref.read(activeSessionIdProvider.notifier).state = widget.session.id;
+      // Persist last-used session/project for restore on next launch.
+      ref.read(settingsControllerProvider.notifier).setLastUsed(
+            sessionId: widget.session.id,
+            projectId: widget.project.id,
+          );
     });
   }
 
@@ -345,6 +355,8 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
       final notifier =
           ref.read(gatewayChatProvider(widget.session.id).notifier);
       if (text.startsWith('/')) {
+        // Command interception: handle locally if possible
+        if (_tryInterceptCommand(text)) return;
         await notifier.sendSlashCommand(text);
       } else {
         await notifier.sendMessage(
@@ -435,6 +447,490 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     _input.selection = TextSelection.collapsed(offset: _input.text.length);
     _focus.requestFocus();
   }
+
+  // ─── Command Interception System ───────────────────────────────────────
+
+  /// Passthrough commands that should always be sent directly to the gateway.
+  static const _passthroughCommands = <String>{
+    '/plan', '/goal', '/personality', '/raw', '/memory', '/mcp', '/config',
+    '/doctor', '/agents', '/login', '/logout', '/bug', '/feedback',
+    '/experimental', '/debug-config', '/plugins', '/hooks', '/apps',
+    '/agent', '/mention',
+  };
+
+  /// Confirm commands that show a confirmation dialog before sending.
+  static const _confirmCommands = <String, String>{
+    '/compact': 'Compact the conversation context?',
+    '/clear': 'Clear the conversation history?',
+    '/undo': 'Undo the last change?',
+    '/redo': 'Redo the last undone change?',
+    '/fork': 'Fork this session into a new branch?',
+    '/side': 'Start a side conversation?',
+    '/init': 'Initialize the project?',
+    '/unshare': 'Unshare this session?',
+    '/review': 'Request a code review?',
+  };
+
+  /// Returns true if the command was intercepted (handled locally),
+  /// false if it should pass through to the gateway.
+  bool _tryInterceptCommand(String text) {
+    final parts = text.split(RegExp(r'\s+'));
+    final commandName = parts.first.toLowerCase();
+    final agentId = widget.session.agentId;
+
+    // $ prefix commands always pass through
+    if (text.startsWith(r'$')) return false;
+
+    // Passthrough commands
+    if (_passthroughCommands.contains(commandName)) return false;
+
+    // Picker commands
+    switch (commandName) {
+      case '/model' || '/models':
+        _handleModelCommand();
+        return true;
+      case '/permissions':
+        _handlePermissionsCommand();
+        return true;
+      case '/export':
+        _handleExportCommand();
+        return true;
+      case '/add-dir':
+        _handleAddDirCommand();
+        return true;
+      case '/sessions':
+        _handleSessionsCommand();
+        return true;
+    }
+
+    // Confirm commands
+    if (commandName == '/new') {
+      _handleNewCommand();
+      return true;
+    }
+    if (_confirmCommands.containsKey(commandName)) {
+      _handleConfirmCommand(commandName, _confirmCommands[commandName]!);
+      return true;
+    }
+
+    // Action commands
+    switch (commandName) {
+      case '/status':
+        _handleStatusCommand();
+        return true;
+      case '/diff':
+        _handleDiffCommand();
+        return true;
+      case '/copy':
+        _handleCopyCommand();
+        return true;
+      case '/fast':
+        _handleFastCommand();
+        return true;
+      case '/stop':
+        _handleStopCommand();
+        return true;
+      case '/exit' || '/quit' || '/q':
+        _handleExitCommand();
+        return true;
+      case '/cost':
+        _handleCostCommand();
+        return true;
+      case '/help':
+        _handleNotAvailableCommand(commandName);
+        return true;
+    }
+
+    // Agent-specific not-available commands
+    if (agentId == 'codex' && commandName == '/summarize') {
+      // Codex uses /compact instead
+      _handleConfirmCommand('/compact', 'Compact the conversation context?');
+      return true;
+    }
+
+    // Not intercepted — pass through to gateway
+    return false;
+  }
+
+  // ─── Picker Command Handlers ─────────────────────────────────────────
+
+  Future<void> _handleModelCommand() async {
+    final agentId = widget.session.agentId;
+    final notifier = ref.read(agentCatalogProvider.notifier);
+
+    List<ModelChoice> choices;
+    try {
+      final models = await notifier.modelsFor(agentId);
+      choices = models
+          .map(
+            (m) => (
+              providerId: _providerOf(m.id, agentId),
+              modelId: m.id,
+              label: m.displayName.trim().isEmpty ? m.id : m.displayName,
+            ),
+          )
+          .toList(growable: false);
+    } catch (_) {
+      // Fallback to agent catalog models
+      final catalog = ref.read(agentCatalogProvider);
+      final agents = readAgents(catalog);
+      final agent = agents.where((a) => a.id == agentId).firstOrNull;
+      choices = (agent?.models ?? <GatewayModelView>[])
+          .map(
+            (m) => (
+              providerId: _providerOf(m.id, agentId),
+              modelId: m.id,
+              label: m.displayName.trim().isEmpty ? m.id : m.displayName,
+            ),
+          )
+          .toList(growable: false);
+    }
+
+    if (!mounted) return;
+    if (choices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No models available for this agent')),
+      );
+      return;
+    }
+
+    final currentModelId = widget.session.modelId;
+    final currentChoice = currentModelId != null
+        ? choices.where((c) => c.modelId == currentModelId).firstOrNull
+        : null;
+
+    final picked = await showModelPicker(
+      context,
+      models: choices,
+      selected: currentChoice,
+    );
+    if (picked == null || !mounted) return;
+
+    final chatNotifier =
+        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    await chatNotifier.sendSlashCommand('/model ${picked.modelId}');
+  }
+
+  Future<void> _handlePermissionsCommand() async {
+    final agentId = widget.session.agentId;
+    final options = _permissionOptionsFor(agentId);
+
+    if (!mounted) return;
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => _PermissionPickerSheet(options: options),
+    );
+    if (selected == null || !mounted) return;
+
+    final notifier =
+        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    await notifier.sendSlashCommand('/permissions $selected');
+  }
+
+  Future<void> _handleExportCommand() async {
+    if (!mounted) return;
+    final format = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Text(
+                'Export conversation',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Markdown'),
+              onTap: () => Navigator.pop(ctx, 'markdown'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.data_object),
+              title: const Text('JSON'),
+              onTap: () => Navigator.pop(ctx, 'json'),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+    if (format == null || !mounted) return;
+    _export(format);
+  }
+
+  Future<void> _handleAddDirCommand() async {
+    final settings = ref.read(settingsControllerProvider);
+    if (!mounted) return;
+    final path = await showDirectoryPicker(
+      context,
+      gatewayBaseUrl: settings.baseUrl,
+      bearerToken: settings.bearerToken,
+      initialPath: widget.project.directory,
+    );
+    if (path == null || !mounted) return;
+
+    final notifier =
+        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    await notifier.sendSlashCommand('/add-dir $path');
+  }
+
+  Future<void> _handleSessionsCommand() async {
+    final projectId = widget.session.projectId;
+    final sessionState =
+        ref.read(gatewaySessionListProvider(projectId));
+    final sessionViews = readSessions(sessionState);
+
+    if (!mounted) return;
+    if (sessionViews.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No other sessions found')),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _SessionPickerSheet(
+        sessions: sessionViews,
+        currentSessionId: widget.session.id,
+      ),
+    );
+    if (selected == null || !mounted) return;
+    if (selected == widget.session.id) return;
+
+    // Find the session and navigate to it
+    final sessionView = sessionViews.firstWhere(
+      (GatewaySessionView s) => s.id == selected,
+    );
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => GatewayChatPage(
+          session: sessionView,
+          project: widget.project,
+        ),
+      ),
+    );
+  }
+
+  // ─── Confirm Command Handlers ────────────────────────────────────────
+
+  Future<void> _handleConfirmCommand(String command, String message) async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(command),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final notifier =
+        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    await notifier.sendSlashCommand(command);
+  }
+
+  Future<void> _handleNewCommand() async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('/new'),
+        content: const Text('Start a new session with this agent?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final projectId = widget.session.projectId;
+      final agentId = widget.session.agentId;
+      final notifier =
+          ref.read(gatewaySessionListProvider(projectId).notifier);
+      final created = await notifier.createSession(agentId: agentId);
+      if (!mounted) return;
+      final session = readSession(created);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => GatewayChatPage(
+            session: session,
+            project: widget.project,
+          ),
+        ),
+      );
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create session: $err')),
+      );
+    }
+  }
+
+  // ─── Action Command Handlers ─────────────────────────────────────────
+
+  Future<void> _handleStatusCommand() async {
+    final chatState = ref.read(gatewayChatProvider(widget.session.id));
+    final agentId = widget.session.agentId;
+    final agent = _agentFromCatalog(ref, agentId);
+    final commands = await _commandsFuture(agent);
+
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => _StatusSheet(
+        sessionId: widget.session.id,
+        agentId: agentId,
+        agentName: agent?.displayName ?? agentId,
+        modelId: widget.session.modelId,
+        usage: chatState.usage,
+        connection: chatState.connection,
+        commands: commands,
+      ),
+    );
+  }
+
+  void _handleDiffCommand() {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => DiffPage(sessionId: widget.session.id),
+      ),
+    );
+  }
+
+  void _handleCopyCommand() {
+    final chatState = ref.read(gatewayChatProvider(widget.session.id));
+    final messages = chatState.orderedMessages.toList();
+    if (messages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No messages to copy')),
+      );
+      return;
+    }
+    final lastAssistant = messages.lastWhere(
+      (m) => m.role == MessageRole.assistant,
+      orElse: () => messages.last,
+    );
+    final text = lastAssistant.orderedParts
+        .whereType<TextPart>()
+        .map((p) => p.text)
+        .join('\n');
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied last assistant message')),
+    );
+  }
+
+  Future<void> _handleFastCommand() async {
+    final notifier =
+        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    await notifier.sendSlashCommand('/fast');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Switching to fast model...')),
+    );
+  }
+
+  void _handleStopCommand() {
+    _abort();
+  }
+
+  Future<void> _handleExitCommand() async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Exit session'),
+        content: const Text('End this session?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    Navigator.of(context).pop();
+  }
+
+  void _handleCostCommand() {
+    final chatState = ref.read(gatewayChatProvider(widget.session.id));
+    final usage = chatState.usage;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => _CostSheet(usage: usage),
+    );
+  }
+
+  void _handleNotAvailableCommand(String command) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$command is not available on mobile')),
+    );
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────
+
+  static String _providerOf(String modelId, String fallback) {
+    final slash = modelId.indexOf('/');
+    return slash > 0 ? modelId.substring(0, slash) : fallback;
+  }
+
+  static List<_PermOption> _permissionOptionsFor(String agentId) {
+    return switch (agentId) {
+      'claude-code' => const [
+          _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
+          _PermOption('acceptEdits', 'Accept Edits', 'Auto-accept edits'),
+          _PermOption('bypassPermissions', 'Full Auto', 'Skip all permission prompts'),
+          _PermOption('default', 'Ask', 'Prompt for each permission'),
+        ],
+      'codex' => const [
+          _PermOption('full-auto', 'Full Auto', 'No confirmation needed'),
+          _PermOption('workspace-write', 'Write', 'Write to workspace'),
+          _PermOption('workspace-read', 'Read-only', 'Read workspace only'),
+          _PermOption('locked', 'Locked', 'No file access'),
+        ],
+      'opencode' || _ => const [
+          _PermOption('build', 'Build', 'Standard build mode'),
+          _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
+        ],
+    };
+  }
+
+  // ─── End Command Interception System ─────────────────────────────────
 
   Future<void> _showHandoffDialog() async {
     final agents = ref.read(agentCatalogProvider).agents;
@@ -974,6 +1470,369 @@ class _ScrollToBottomButton extends StatelessWidget {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Command Interception Helper Widgets ────────────────────────────────
+
+class _PermOption {
+  const _PermOption(this.value, this.label, this.description);
+  final String value;
+  final String label;
+  final String description;
+}
+
+class _PermissionPickerSheet extends StatelessWidget {
+  const _PermissionPickerSheet({required this.options});
+  final List<_PermOption> options;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Text(
+              'Permission mode',
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          for (final opt in options)
+            ListTile(
+              leading: const Icon(Icons.security),
+              title: Text(opt.label),
+              subtitle: Text(opt.description),
+              onTap: () => Navigator.pop(context, opt.value),
+            ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionPickerSheet extends StatelessWidget {
+  const _SessionPickerSheet({
+    required this.sessions,
+    required this.currentSessionId,
+  });
+
+  final List<GatewaySessionView> sessions;
+  final String currentSessionId;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.7;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Text(
+              'Switch session',
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: sessions.length,
+              itemBuilder: (ctx, i) {
+                final s = sessions[i];
+                final isCurrent = s.id == currentSessionId;
+                return ListTile(
+                  leading: Icon(
+                    isCurrent ? Icons.chat_bubble : Icons.chat_bubble_outline,
+                    color: isCurrent
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(
+                    s.title.isEmpty ? '(untitled)' : s.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: isCurrent
+                        ? TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.primary,
+                          )
+                        : null,
+                  ),
+                  subtitle: Text(
+                    '${s.agentId} - ${s.status}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  trailing: isCurrent
+                      ? Icon(Icons.check, color: theme.colorScheme.primary, size: 18)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, s.id),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusSheet extends StatelessWidget {
+  const _StatusSheet({
+    required this.sessionId,
+    required this.agentId,
+    required this.agentName,
+    required this.modelId,
+    required this.usage,
+    required this.connection,
+    required this.commands,
+  });
+
+  final String sessionId;
+  final String agentId;
+  final String agentName;
+  final String? modelId;
+  final TokenUsage? usage;
+  final GatewayChatConnectionState connection;
+  final List<GatewayCommandView> commands;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.8;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Text('Status', style: theme.textTheme.titleMedium),
+            ),
+            const SizedBox(height: 16),
+            _statusRow(theme, 'Session', sessionId),
+            _statusRow(theme, 'Agent', agentName),
+            _statusRow(theme, 'Model', modelId ?? 'default'),
+            _statusRow(
+              theme,
+              'Connection',
+              switch (connection) {
+                GatewayChatConnectionState.connected => 'Connected',
+                GatewayChatConnectionState.connecting => 'Connecting...',
+                GatewayChatConnectionState.disconnected => 'Disconnected',
+              },
+            ),
+            if (usage != null) ...[
+              _statusRow(
+                theme,
+                'Tokens',
+                '${(usage!.totalTokens / 1000).toStringAsFixed(1)}k / '
+                    '${(TokenUsage.contextLimit / 1000).toStringAsFixed(0)}k',
+              ),
+              _statusRow(
+                theme,
+                'Input / Output',
+                '${(usage!.inputTokens / 1000).toStringAsFixed(1)}k / '
+                    '${(usage!.outputTokens / 1000).toStringAsFixed(1)}k',
+              ),
+            ],
+            if (commands.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Available commands',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: scheme.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              for (final cmd in commands)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      Text(
+                        cmd.name,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (cmd.description.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            cmd.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusRow(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CostSheet extends StatelessWidget {
+  const _CostSheet({required this.usage});
+  final TokenUsage? usage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    if (usage == null) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: Text(
+              'No token usage data available yet.',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ),
+      );
+    }
+    final u = usage!;
+    final ratio = u.ratio.clamp(0.0, 1.0);
+    final color = ratio > 0.8 ? scheme.error : scheme.primary;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Token Usage', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withValues(alpha: 0.15)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Total', style: theme.textTheme.bodyMedium),
+                      Text(
+                        '${(u.totalTokens / 1000).toStringAsFixed(1)}k / '
+                        '${(TokenUsage.contextLimit / 1000).toStringAsFixed(0)}k',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: ratio,
+                      minHeight: 6,
+                      backgroundColor: scheme.surfaceContainerHighest,
+                      valueColor: AlwaysStoppedAnimation(color),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Input tokens', style: theme.textTheme.bodySmall),
+                      Text(
+                        '${(u.inputTokens / 1000).toStringAsFixed(1)}k',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Output tokens', style: theme.textTheme.bodySmall),
+                      Text(
+                        '${(u.outputTokens / 1000).toStringAsFixed(1)}k',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Context used', style: theme.textTheme.bodySmall),
+                      Text(
+                        '${(ratio * 100).toStringAsFixed(1)}%',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -7,6 +7,7 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 
 const { AgentRegistry } = require('./agents');
+const { ProfileStore } = require('./config');
 const { EventBus, makeEvent } = require('./events');
 const { handleGit, handleFiles } = require('./fs_routes');
 const {
@@ -20,9 +21,12 @@ const {
   mkdir,
 } = require('./store');
 
-async function createGatewayServer({ dataFile, adapters } = {}) {
+async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
   const store = new JsonStore(dataFile);
   await store.load();
+
+  const profileStore = new ProfileStore(profilesFile);
+  await profileStore.load();
 
   // Reset sessions and orphaned messages stuck in 'running' from a previous
   // crash/restart. Without this, the UI keeps showing a forever-streaming
@@ -44,7 +48,7 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
   }
   await store.save();
 
-  const registry = adapters || new AgentRegistry();
+  const registry = adapters || new AgentRegistry({ profileStore });
   const bus = new EventBus();
   const activeRuns = new Map();
   // Per-session queue of follow-up turns: messages the user sent while the
@@ -171,6 +175,16 @@ async function createGatewayServer({ dataFile, adapters } = {}) {
         }
       }
 
+      // Settings / profile management
+      if (segments[0] === 'settings') {
+        return await handleSettings({
+          request,
+          response,
+          segments,
+          profileStore,
+        });
+      }
+
       throw httpError(404, 'not found');
     } catch (error) {
       if (response.headersSent) {
@@ -277,6 +291,54 @@ async function handleAgents({ request, response, segments, url, store, registry 
       commands: await adapter.commands(project?.directory),
     });
   }
+  throw httpError(404, 'not found');
+}
+
+async function handleSettings({ request, response, segments, profileStore }) {
+  // GET /settings/active-profile
+  if (segments.length === 2 && segments[1] === 'active-profile' && request.method === 'GET') {
+    const active = profileStore.getActive();
+    return sendJson(response, active ? profileStore.list().find((p) => p.isCurrent) : null);
+  }
+
+  // /settings/profiles routes
+  if (segments.length >= 2 && segments[1] === 'profiles') {
+    // GET /settings/profiles
+    if (segments.length === 2 && request.method === 'GET') {
+      return sendJson(response, profileStore.list());
+    }
+    // POST /settings/profiles
+    if (segments.length === 2 && request.method === 'POST') {
+      const body = await readJson(request);
+      const profile = await profileStore.create(body);
+      return sendJson(response, profile, 201);
+    }
+
+    const id = segments[2];
+
+    // POST /settings/profiles/:id/activate
+    if (segments.length === 4 && segments[3] === 'activate' && request.method === 'POST') {
+      const activated = await profileStore.activate(id);
+      if (!activated) throw httpError(404, 'profile not found');
+      return sendJson(response, { ok: true });
+    }
+
+    // PATCH /settings/profiles/:id
+    if (segments.length === 3 && request.method === 'PATCH') {
+      const body = await readJson(request);
+      const updated = await profileStore.update(id, body);
+      if (!updated) throw httpError(404, 'profile not found');
+      return sendJson(response, updated);
+    }
+
+    // DELETE /settings/profiles/:id
+    if (segments.length === 3 && request.method === 'DELETE') {
+      const deleted = await profileStore.delete(id);
+      if (!deleted) throw httpError(404, 'profile not found');
+      return sendJson(response, { ok: true });
+    }
+  }
+
   throw httpError(404, 'not found');
 }
 

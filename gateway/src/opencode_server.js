@@ -5,7 +5,7 @@ const net = require('node:net');
 const { killProcessTree, spawnCli } = require('./cli');
 
 class OpenCodeServerManager {
-  constructor({ command, baseUrl, password, startTimeoutMs } = {}) {
+  constructor({ command, baseUrl, password, startTimeoutMs, extraEnv } = {}) {
     this.command = command;
     this.externalBaseUrl = normalizeBaseUrl(
       baseUrl || process.env.OPENCODE_SERVER_URL || '',
@@ -15,6 +15,7 @@ class OpenCodeServerManager {
       password ?? (this.externalBaseUrl ? process.env.OPENCODE_SERVER_PASSWORD || '' : '');
     this.startTimeoutMs =
       startTimeoutMs ?? (Number(process.env.OPENCODE_SERVER_START_TIMEOUT_MS) || 45000);
+    this.extraEnv = extraEnv || {};
     this.child = null;
     this.ensurePromise = null;
     this.logs = '';
@@ -51,6 +52,7 @@ class OpenCodeServerManager {
     try {
       this.child = spawnCli(this.command, args, {
         env: {
+          ...this.extraEnv,
           ...(this.password ? { OPENCODE_SERVER_PASSWORD: this.password } : {}),
         },
       });

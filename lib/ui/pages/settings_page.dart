@@ -27,6 +27,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   String? _testError;
   bool? _testOk;
 
+  // ── Profiles state ──
+  List<Map<String, dynamic>> _profiles = const [];
+  Map<String, dynamic>? _activeProfile;
+  bool _profilesLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -37,7 +42,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _modelId = s.modelId;
     // Auto-test if URL is already configured.
     if (s.baseUrl.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _testAndLoadModels());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _testAndLoadModels();
+        _loadProfiles();
+      });
     }
   }
 
@@ -46,6 +54,102 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _baseUrlCtrl.dispose();
     _tokenCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadProfiles() async {
+    final url = _baseUrlCtrl.text.trim();
+    if (url.isEmpty) return;
+    setState(() => _profilesLoading = true);
+    try {
+      final client = GatewayClient(
+        baseUrl: Uri.parse(url),
+        bearerToken: _tokenCtrl.text.trim(),
+      );
+      final profiles = await client.listProfiles();
+      final active = await client.getActiveProfile();
+      client.close();
+      if (!mounted) return;
+      setState(() {
+        _profiles = profiles;
+        _activeProfile = active;
+      });
+    } catch (_) {
+      // Silently ignore — profiles are optional.
+    } finally {
+      if (mounted) setState(() => _profilesLoading = false);
+    }
+  }
+
+  Future<void> _activateProfile(String profileId) async {
+    final url = _baseUrlCtrl.text.trim();
+    if (url.isEmpty) return;
+    try {
+      final client = GatewayClient(
+        baseUrl: Uri.parse(url),
+        bearerToken: _tokenCtrl.text.trim(),
+      );
+      await client.activateProfile(profileId);
+      client.close();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to activate profile')),
+      );
+      return;
+    }
+    await _loadProfiles();
+  }
+
+  Future<void> _deleteProfile(String profileId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete profile?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final url = _baseUrlCtrl.text.trim();
+    try {
+      final client = GatewayClient(
+        baseUrl: Uri.parse(url),
+        bearerToken: _tokenCtrl.text.trim(),
+      );
+      await client.deleteProfile(profileId);
+      client.close();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to delete profile')),
+      );
+      return;
+    }
+    await _loadProfiles();
+  }
+
+  Future<void> _openProfileEditor({Map<String, dynamic>? existing}) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => _ProfileEditorPage(
+          baseUrl: _baseUrlCtrl.text.trim(),
+          bearerToken: _tokenCtrl.text.trim(),
+          existing: existing,
+        ),
+      ),
+    );
+    if (result == true) {
+      await _loadProfiles();
+    }
   }
 
   Future<void> _testAndLoadModels() async {
@@ -184,6 +288,61 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          // ── Profiles section ───────────────────────────────────────────
+          const _SectionHeader(title: 'Profiles', icon: Icons.person_outlined),
+          const SizedBox(height: 10),
+          if (_activeProfile != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Active: ${_activeProfile!['name'] ?? 'Unnamed'}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_profilesLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else ...[
+            for (final profile in _profiles)
+              _ProfileTile(
+                profile: profile,
+                isActive: _activeProfile != null &&
+                    _activeProfile!['id'] == profile['id'],
+                onTap: () {
+                  final id = profile['id'] as String?;
+                  if (id != null) _activateProfile(id);
+                },
+                onEdit: () => _openProfileEditor(existing: profile),
+                onDelete: () {
+                  final id = profile['id'] as String?;
+                  if (id != null) _deleteProfile(id);
+                },
+              ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _openProfileEditor(),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add Profile'),
+            ),
+          ],
+          const SizedBox(height: 28),
           // ── Connection section ──────────────────────────────────────────
           const _SectionHeader(title: 'Connection', icon: Icons.dns_outlined),
           const SizedBox(height: 10),
@@ -532,6 +691,367 @@ class _ThemeSelector extends StatelessWidget {
       ],
       selected: {current},
       onSelectionChanged: (s) => onChanged(s.first),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Profile Tile
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _ProfileTile extends StatelessWidget {
+  const _ProfileTile({
+    required this.profile,
+    required this.isActive,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final Map<String, dynamic> profile;
+  final bool isActive;
+  final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  String _keysSummary() {
+    final keys = profile['keys'];
+    if (keys is! Map<String, dynamic> || keys.isEmpty) return 'No keys';
+    final parts = <String>[];
+    for (final entry in keys.entries) {
+      final provider = entry.key;
+      final value = entry.value;
+      final hasKey = value is Map<String, dynamic> &&
+          (value['key'] as String? ?? '').isNotEmpty;
+      if (hasKey) parts.add('$provider ✓');
+    }
+    return parts.isEmpty ? 'No keys' : parts.join(', ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final name = profile['name'] as String? ?? 'Unnamed';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: isActive ? Colors.green : Colors.transparent,
+                  border: Border.all(
+                    color: isActive
+                        ? Colors.green
+                        : theme.colorScheme.outline,
+                  ),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight:
+                            isActive ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _keysSummary(),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                onSelected: (value) {
+                  if (value == 'edit') onEdit();
+                  if (value == 'delete') onDelete();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Profile Editor Page
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _ProfileEditorPage extends StatefulWidget {
+  const _ProfileEditorPage({
+    required this.baseUrl,
+    required this.bearerToken,
+    this.existing,
+  });
+
+  final String baseUrl;
+  final String bearerToken;
+  final Map<String, dynamic>? existing;
+
+  @override
+  State<_ProfileEditorPage> createState() => _ProfileEditorPageState();
+}
+
+class _ProfileEditorPageState extends State<_ProfileEditorPage> {
+  late final TextEditingController _nameCtrl;
+
+  // Per-provider key controllers
+  late final TextEditingController _anthropicKeyCtrl;
+  late final TextEditingController _anthropicBaseUrlCtrl;
+  late final TextEditingController _openaiKeyCtrl;
+  late final TextEditingController _openaiBaseUrlCtrl;
+  late final TextEditingController _opencodeKeyCtrl;
+  late final TextEditingController _opencodeBaseUrlCtrl;
+
+  final Map<String, bool> _obscure = {
+    'anthropic': true,
+    'openai': true,
+    'opencode': true,
+  };
+
+  bool _saving = false;
+
+  bool get _isEditing => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    _nameCtrl = TextEditingController(
+      text: existing?['name'] as String? ?? '',
+    );
+
+    final keys = existing?['keys'] as Map<String, dynamic>? ?? {};
+    final anthropic = keys['anthropic'] as Map<String, dynamic>? ?? {};
+    final openai = keys['openai'] as Map<String, dynamic>? ?? {};
+    final opencode = keys['opencode'] as Map<String, dynamic>? ?? {};
+
+    _anthropicKeyCtrl =
+        TextEditingController(text: anthropic['key'] as String? ?? '');
+    _anthropicBaseUrlCtrl =
+        TextEditingController(text: anthropic['baseUrl'] as String? ?? '');
+    _openaiKeyCtrl =
+        TextEditingController(text: openai['key'] as String? ?? '');
+    _openaiBaseUrlCtrl =
+        TextEditingController(text: openai['baseUrl'] as String? ?? '');
+    _opencodeKeyCtrl =
+        TextEditingController(text: opencode['key'] as String? ?? '');
+    _opencodeBaseUrlCtrl =
+        TextEditingController(text: opencode['baseUrl'] as String? ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _anthropicKeyCtrl.dispose();
+    _anthropicBaseUrlCtrl.dispose();
+    _openaiKeyCtrl.dispose();
+    _openaiBaseUrlCtrl.dispose();
+    _opencodeKeyCtrl.dispose();
+    _opencodeBaseUrlCtrl.dispose();
+    super.dispose();
+  }
+
+  Map<String, dynamic> _buildKeys() {
+    final keys = <String, dynamic>{};
+    void addProvider(
+      String name,
+      TextEditingController keyCtrl,
+      TextEditingController baseUrlCtrl,
+    ) {
+      final key = keyCtrl.text.trim();
+      final baseUrl = baseUrlCtrl.text.trim();
+      if (key.isNotEmpty || baseUrl.isNotEmpty) {
+        keys[name] = <String, dynamic>{
+          if (key.isNotEmpty) 'key': key,
+          if (baseUrl.isNotEmpty) 'baseUrl': baseUrl,
+        };
+      }
+    }
+
+    addProvider('anthropic', _anthropicKeyCtrl, _anthropicBaseUrlCtrl);
+    addProvider('openai', _openaiKeyCtrl, _openaiBaseUrlCtrl);
+    addProvider('opencode', _opencodeKeyCtrl, _opencodeBaseUrlCtrl);
+    return keys;
+  }
+
+  Future<void> _save() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile name is required')),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final client = GatewayClient(
+        baseUrl: Uri.parse(widget.baseUrl),
+        bearerToken: widget.bearerToken,
+      );
+      final keys = _buildKeys();
+      if (_isEditing) {
+        final id = widget.existing!['id'] as String;
+        await client.updateProfile(id, name: name, keys: keys);
+      } else {
+        await client.createProfile(name: name, keys: keys);
+      }
+      client.close();
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save profile: $err')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_isEditing ? 'Edit Profile' : 'New Profile'),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Save'),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          TextField(
+            controller: _nameCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Profile Name',
+              prefixIcon: Icon(Icons.label_outlined),
+            ),
+            textCapitalization: TextCapitalization.words,
+          ),
+          const SizedBox(height: 24),
+          _buildProviderSection(
+            theme: theme,
+            title: 'Anthropic',
+            providerKey: 'anthropic',
+            keyCtrl: _anthropicKeyCtrl,
+            baseUrlCtrl: _anthropicBaseUrlCtrl,
+          ),
+          const SizedBox(height: 16),
+          _buildProviderSection(
+            theme: theme,
+            title: 'OpenAI',
+            providerKey: 'openai',
+            keyCtrl: _openaiKeyCtrl,
+            baseUrlCtrl: _openaiBaseUrlCtrl,
+          ),
+          const SizedBox(height: 16),
+          _buildProviderSection(
+            theme: theme,
+            title: 'OpenCode',
+            providerKey: 'opencode',
+            keyCtrl: _opencodeKeyCtrl,
+            baseUrlCtrl: _opencodeBaseUrlCtrl,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProviderSection({
+    required ThemeData theme,
+    required String title,
+    required String providerKey,
+    required TextEditingController keyCtrl,
+    required TextEditingController baseUrlCtrl,
+  }) {
+    final isObscured = _obscure[providerKey] ?? true;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: keyCtrl,
+              obscureText: isObscured,
+              decoration: InputDecoration(
+                labelText: 'API Key',
+                prefixIcon: const Icon(Icons.vpn_key_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    isObscured ? Icons.visibility_off : Icons.visibility,
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscure[providerKey] = !isObscured;
+                    });
+                  },
+                ),
+                isDense: true,
+              ),
+              autocorrect: false,
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: baseUrlCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Base URL (optional)',
+                prefixIcon: Icon(Icons.link),
+                isDense: true,
+              ),
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

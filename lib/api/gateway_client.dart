@@ -249,6 +249,67 @@ class GatewayClient {
     return res.data ?? const <String, dynamic>{};
   }
 
+  /// List all profiles (keys are masked by the gateway).
+  Future<List<Map<String, dynamic>>> listProfiles() async {
+    final res = await _dio.get<List<dynamic>>('/settings/profiles');
+    return _readList(res.data);
+  }
+
+  /// Get the currently active profile (masked keys).
+  Future<Map<String, dynamic>?> getActiveProfile() async {
+    final res = await _dio.get<dynamic>('/settings/active-profile');
+    if (res.data == null) return null;
+    if (res.data is Map<String, dynamic>) return res.data as Map<String, dynamic>;
+    return null;
+  }
+
+  /// Create a new profile.
+  Future<Map<String, dynamic>> createProfile({
+    required String name,
+    Map<String, dynamic> keys = const {},
+    Map<String, String> defaultModel = const {},
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/settings/profiles',
+      data: <String, Object?>{
+        'name': name,
+        'keys': keys,
+        'defaultModel': defaultModel,
+      },
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
+  /// Update an existing profile.
+  Future<Map<String, dynamic>> updateProfile(
+    String profileId, {
+    String? name,
+    Map<String, dynamic>? keys,
+    Map<String, String>? defaultModel,
+  }) async {
+    final res = await _dio.patch<Map<String, dynamic>>(
+      '/settings/profiles/${_path(profileId)}',
+      data: <String, Object?>{
+        if (name != null) 'name': name,
+        if (keys != null) 'keys': keys,
+        if (defaultModel != null) 'defaultModel': defaultModel,
+      },
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
+  /// Delete a profile.
+  Future<void> deleteProfile(String profileId) async {
+    await _dio.delete<dynamic>('/settings/profiles/${_path(profileId)}');
+  }
+
+  /// Activate a profile (make it the current one).
+  Future<void> activateProfile(String profileId) async {
+    await _dio.post<dynamic>(
+      '/settings/profiles/${_path(profileId)}/activate',
+    );
+  }
+
   Future<void> deleteMessage(String sessionId, String messageId) async {
     await _dio.delete<dynamic>(
       '/sessions/${_path(sessionId)}/messages/${_path(messageId)}',

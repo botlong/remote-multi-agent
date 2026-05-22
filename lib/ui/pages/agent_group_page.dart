@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/gateway_providers.dart';
+import '../../state/settings_store.dart';
 import '../widgets/agent_badge.dart';
 import '../widgets/model_picker.dart';
 import 'gateway_chat_page.dart';
@@ -26,11 +27,37 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
   Future<List<GatewayModelView>>? _modelsFuture;
   bool _modelLookupComplete = false;
   bool _creating = false;
+  bool _restoredFromPrefs = false;
+  String? _preferredModelId;
 
   @override
   Widget build(BuildContext context) {
     final catalog = ref.watch(agentCatalogProvider);
     final agents = readAgents(catalog);
+
+    // Auto-select last-used agent/model on first build with agents available.
+    if (!_restoredFromPrefs && agents.isNotEmpty) {
+      _restoredFromPrefs = true;
+      final settings = ref.read(settingsControllerProvider);
+      if (_selectedAgent == null && settings.lastAgentId.isNotEmpty) {
+        final match = agents.cast<GatewayAgentView?>().firstWhere(
+              (a) => a!.id == settings.lastAgentId,
+              orElse: () => null,
+            );
+        if (match != null) {
+          _selectedAgent = match;
+          _selectedPermission = _defaultPermission(match.id);
+          _modelsFuture = _loadModels(match.id);
+        }
+      }
+      if (_selectedAgent != null &&
+          _selectedModel == null &&
+          settings.lastModelId.isNotEmpty) {
+        // Model will be resolved once _modelsFuture completes; store the
+        // preferred ID so we can pick it from the list.
+        _preferredModelId = settings.lastModelId;
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -104,7 +131,17 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
                     _selectedAgent != null) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted && _selectedModel == null) {
-                      setState(() => _selectedModel = models.first);
+                      // Prefer the last-used model if available in the list.
+                      final preferred = _preferredModelId != null
+                          ? models.cast<GatewayModelView?>().firstWhere(
+                                (m) => m!.id == _preferredModelId,
+                                orElse: () => null,
+                              )
+                          : null;
+                      setState(
+                        () => _selectedModel = preferred ?? models.first,
+                      );
+                      _preferredModelId = null;
                     }
                   });
                 }
@@ -191,6 +228,11 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
       );
       if (!mounted) return;
       final session = readSession(created);
+      // Persist last-used agent/model for next time.
+      ref.read(settingsControllerProvider.notifier).setLastUsed(
+            agentId: agent.id,
+            modelId: _selectedModel?.id,
+          );
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
           builder: (_) => GatewayChatPage(
