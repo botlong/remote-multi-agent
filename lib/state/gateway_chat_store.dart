@@ -271,6 +271,7 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
           body: state.sessionTitle.isNotEmpty
               ? state.sessionTitle
               : 'Session completed successfully',
+          sessionId: state.sessionId,
         );
       case 'session.error':
         final errMsg = _stringMessage(event.data['error']) ??
@@ -280,6 +281,7 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         showAppNotification(
           title: 'Agent error',
           body: errMsg,
+          sessionId: state.sessionId,
         );
       case 'gateway.reconnected':
         // SSE just came back from a disconnect (e.g. gateway restart) — pull
@@ -375,11 +377,15 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
       return;
     }
     // Prefer existing parts if they have more content (from deltas)
-    final mergedParts = message.parts.length > existing.parts.length
-        ? message.parts
-        : existing.parts.isNotEmpty
-            ? existing.parts
-            : message.parts;
+    final mergedParts = Map<String, Part>.from(message.parts);
+    for (final entry in existing.parts.entries) {
+      final incomingPart = mergedParts[entry.key];
+      if (incomingPart == null) {
+        mergedParts[entry.key] = entry.value;
+      } else if (_partTextLength(entry.value) > _partTextLength(incomingPart)) {
+        mergedParts[entry.key] = entry.value;
+      }
+    }
     final merged = existing.copyWith(
       role: message.role != MessageRole.unknown ? message.role : existing.role,
       status: message.status != MessageStatus.unknown
