@@ -19,8 +19,15 @@ jobs:
       - name: Flutter dependencies
         run: flutter pub get
 
-      - name: Build IPA (no codesign)
-        run: flutter build ipa --no-codesign
+      - name: Build iOS app (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/ios/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/Runner.app
+          cd build/ios/ipa
+          zip -qry Runner-unsigned.ipa Payload
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
