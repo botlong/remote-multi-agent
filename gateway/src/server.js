@@ -8,8 +8,15 @@ const execFileAsync = promisify(execFile);
 
 const { AgentRegistry } = require('./agents');
 const { ProfileStore, maskProfile } = require('./config');
+const {
+  listOfficialCredentials,
+  listCcSwitchCredentials,
+  loadCredential,
+  maskCredentialEntry,
+} = require('./credential_sources');
 const { EventBus, makeEvent } = require('./events');
 const { handleGit, handleFiles } = require('./fs_routes');
+const { SqliteStore } = require('./sqlite_store');
 const {
   JsonStore,
   appendTextToMessage,
@@ -22,31 +29,16 @@ const {
 } = require('./store');
 
 async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
-  const store = new JsonStore(dataFile);
+  const useSqlite = process.env.GATEWAY_STORE === 'sqlite';
+  const store = useSqlite ? new SqliteStore() : new JsonStore(dataFile);
   await store.load();
 
   const profileStore = new ProfileStore(profilesFile);
   await profileStore.load();
 
   // Reset sessions and orphaned messages stuck in 'running' from a previous
-  // crash/restart. Without this, the UI keeps showing a forever-streaming
-  // assistant bubble that will never produce more text.
-  for (const session of store.data.sessions) {
-    if (session.status === 'running') {
-      session.status = 'idle';
-    }
-  }
-  for (const messages of Object.values(store.data.messagesBySession || {})) {
-    if (!Array.isArray(messages)) continue;
-    for (const msg of messages) {
-      if (msg && msg.status === 'running') {
-        msg.status = 'error';
-        msg.time = msg.time || {};
-        msg.time.completed = msg.time.completed || Date.now();
-      }
-    }
-  }
-  await store.save();
+  // crash/restart.
+  await store.resetOrphaned();
 
   const registry = adapters || new AgentRegistry({ profileStore });
   const bus = new EventBus();
@@ -126,10 +118,14 @@ async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
 
       // GET /search?q=...&projectId=...
       if (request.method === 'GET' && segments[0] === 'search') {
-        const q = (url.searchParams.get('q') || '').toLowerCase().trim();
+        const q = (url.searchParams.get('q') || '').trim();
         const projectId = url.searchParams.get('projectId') || null;
         if (!q) return sendJson(response, []);
+        if (store.search) {
+          return sendJson(response, store.search(q, { projectId }));
+        }
         const results = [];
+        const qLower = q.toLowerCase();
         const sessions = projectId
           ? store.listSessions(projectId)
           : store.data.sessions;
@@ -140,7 +136,7 @@ async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
               .map((p) => p.text || p.output || '')
               .join(' ')
               .toLowerCase();
-            if (text.includes(q)) {
+            if (text.includes(qLower)) {
               results.push({
                 sessionId: session.id,
                 sessionTitle: session.title,
@@ -148,8 +144,8 @@ async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
                 messageId: msg.id,
                 role: msg.role,
                 snippet: text.slice(
-                  Math.max(0, text.indexOf(q) - 40),
-                  text.indexOf(q) + q.length + 80,
+                  Math.max(0, text.indexOf(qLower) - 40),
+                  text.indexOf(qLower) + qLower.length + 80,
                 ),
               });
               if (results.length >= 50) break;
@@ -304,6 +300,19 @@ async function handleSettings({ request, response, segments, profileStore }) {
     return sendJson(response, active ? profileStore.list().find((p) => p.isCurrent) : null);
   }
 
+  // /settings/credential-sources/* — read-only previews of local credential
+  // sources the user can import from.
+  if (segments[1] === 'credential-sources' && request.method === 'GET') {
+    if (segments.length === 3 && segments[2] === 'official') {
+      const entries = await listOfficialCredentials();
+      return sendJson(response, entries.map(maskCredentialEntry));
+    }
+    if (segments.length === 3 && segments[2] === 'cc-switch') {
+      const entries = await listCcSwitchCredentials();
+      return sendJson(response, entries.map(maskCredentialEntry));
+    }
+  }
+
   // /settings/profiles routes
   if (segments.length >= 2 && segments[1] === 'profiles') {
     // GET /settings/profiles
@@ -314,6 +323,30 @@ async function handleSettings({ request, response, segments, profileStore }) {
     if (segments.length === 2 && request.method === 'POST') {
       const body = await readJson(request);
       const profile = await profileStore.create(body);
+      return sendJson(response, maskProfile(profile), 201);
+    }
+    // POST /settings/profiles/import — { name, source, sourceId?, makeActive? }
+    if (segments.length === 3 && segments[2] === 'import' && request.method === 'POST') {
+      const body = await readJson(request);
+      const name = (body && typeof body.name === 'string') ? body.name.trim() : '';
+      const source = body && body.source;
+      if (!name) throw httpError(400, 'name is required');
+      if (source !== 'official' && source !== 'cc-switch') {
+        throw httpError(400, 'source must be "official" or "cc-switch"');
+      }
+      const credential = await loadCredential({ source, sourceId: body.sourceId });
+      if (!credential || !credential.authToken) {
+        throw httpError(404, `no credential found for source=${source}`);
+      }
+      const provider = credential.provider || 'anthropic';
+      const keys = {
+        [provider]: {
+          key: credential.authToken,
+          ...(credential.baseUrl ? { baseUrl: credential.baseUrl } : {}),
+        },
+      };
+      const profile = await profileStore.create({ name, keys });
+      if (body.makeActive) await profileStore.activate(profile.id);
       return sendJson(response, maskProfile(profile), 201);
     }
 
@@ -420,9 +453,10 @@ async function handleSessions({
         }
         let queued = false;
         if (!injected) {
-          // Codex/Claude can't accept mid-turn input. Queue the message so
-          // it runs as the next turn instead of being lost.
           const queue = pendingTurns.get(session.id) || [];
+          if (queue.length >= 10) {
+            return sendJson(response, { error: 'pending queue full, try again later' }, 429);
+          }
           queue.push({ text, parts });
           pendingTurns.set(session.id, queue);
           queued = true;

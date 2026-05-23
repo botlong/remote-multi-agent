@@ -36,7 +36,11 @@ class GatewayClient {
                 },
               ),
             ),
-        _httpClient = httpClient ?? http.Client();
+        _httpClient = httpClient ?? http.Client() {
+    if (dio == null) {
+      _dio.interceptors.add(_RetryInterceptor(_dio));
+    }
+  }
 
   final String _base;
   final String? _bearerToken;
@@ -310,6 +314,46 @@ class GatewayClient {
     );
   }
 
+  /// List Claude credentials discoverable in `~/.claude/settings.json`.
+  /// Each entry includes a `tokenPreview` but never the raw token.
+  Future<List<Map<String, dynamic>>> listOfficialCredentials() async {
+    final res = await _dio.get<List<dynamic>>(
+      '/settings/credential-sources/official',
+    );
+    return _readList(res.data);
+  }
+
+  /// List Claude provider credentials discoverable in the CC-Switch database.
+  /// Returns an empty list when CC-Switch or `node:sqlite` are unavailable.
+  Future<List<Map<String, dynamic>>> listCcSwitchCredentials() async {
+    final res = await _dio.get<List<dynamic>>(
+      '/settings/credential-sources/cc-switch',
+    );
+    return _readList(res.data);
+  }
+
+  /// Import a credential from a local source into a new profile.
+  /// [source] must be `'official'` or `'cc-switch'`.
+  /// For `cc-switch`, pass [sourceId] to pick a specific provider; otherwise
+  /// the active provider (or first available) is used.
+  Future<Map<String, dynamic>> importProfile({
+    required String name,
+    required String source,
+    String? sourceId,
+    bool makeActive = false,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/settings/profiles/import',
+      data: <String, Object?>{
+        'name': name,
+        'source': source,
+        if (sourceId != null) 'sourceId': sourceId,
+        if (makeActive) 'makeActive': true,
+      },
+    );
+    return res.data ?? const <String, dynamic>{};
+  }
+
   Future<void> deleteMessage(String sessionId, String messageId) async {
     await _dio.delete<dynamic>(
       '/sessions/${_path(sessionId)}/messages/${_path(messageId)}',
@@ -439,5 +483,47 @@ class GatewayClient {
       return _readList(data[field]);
     }
     return _readList(data);
+  }
+}
+
+class _RetryInterceptor extends Interceptor {
+  _RetryInterceptor(this._dio);
+
+  final Dio _dio;
+  static const _maxRetries = 2;
+  static const _baseDelay = Duration(milliseconds: 500);
+
+  @override
+  Future<void> onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    if (!_shouldRetry(err)) return handler.next(err);
+
+    final attempt = (err.requestOptions.extra['_retryAttempt'] as int?) ?? 0;
+    if (attempt >= _maxRetries) return handler.next(err);
+
+    final delay = _baseDelay * (1 << attempt);
+    await Future<void>.delayed(delay);
+
+    final options = err.requestOptions;
+    options.extra['_retryAttempt'] = attempt + 1;
+
+    try {
+      final response = await _dio.fetch<dynamic>(options);
+      handler.resolve(response);
+    } on DioException catch (e) {
+      handler.next(e);
+    }
+  }
+
+  static bool _shouldRetry(DioException err) {
+    if (err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.sendTimeout ||
+        err.type == DioExceptionType.connectionError) {
+      return true;
+    }
+    final status = err.response?.statusCode ?? 0;
+    return status == 502 || status == 503 || status == 504 || status == 429;
   }
 }

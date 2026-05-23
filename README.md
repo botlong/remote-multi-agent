@@ -21,10 +21,16 @@ The gateway owns local project directories, sessions, CLI processes, event
 normalization, and filesystem/git operations. The Flutter app is a **thin
 client** — no model keys, no shell commands, no direct filesystem access.
 
-The gateway auto-discovers Claude API credentials via:
-1. `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` env vars
-2. CC-Switch database (`~/.cc-switch/cc-switch.db`, active provider)
-3. Official Claude settings (`~/.claude/settings.json`)
+Credentials live in **gateway profiles** (`~/.gateway/profiles.json`). Multiple
+profiles are supported, one active at a time. On first launch nothing is
+auto-discovered — the user explicitly imports a credential (Anthropic / OpenAI)
+from one of three sources via the settings page:
+
+1. **Local config files** — `~/.claude/settings.json` (Claude) or
+   `~/.codex/auth.json` (Codex)
+2. **CC-Switch** — pick any Claude or Codex provider from
+   `~/.cc-switch/cc-switch.db`
+3. **Manual** — paste API key + base URL for any provider
 
 ## Features
 
@@ -148,8 +154,9 @@ gateway/
 | Server URL | `http://10.x.x.x:4096` | Gateway address (LAN / Tailscale) |
 | Bearer token | *(optional)* | For gateway auth if configured |
 
-The app never holds upstream API keys — those are resolved by the gateway
-from environment variables, CC-Switch, or `~/.claude/settings.json`.
+The app never holds upstream API keys — they are stored in the gateway's
+profile store (`~/.gateway/profiles.json`) and imported on demand from one of
+the three sources described above.
 
 ## Gateway API
 
@@ -172,3 +179,11 @@ from environment variables, CC-Switch, or `~/.claude/settings.json`.
 | GET | `/files?path=...` | Recursive file tree |
 | GET | `/files/read?path=...` | Read file content |
 | GET | `/search?q=...` | Full-text search |
+| GET | `/settings/profiles` | List credential profiles (keys masked) |
+| POST | `/settings/profiles` | Create profile manually |
+| PATCH | `/settings/profiles/:id` | Update profile |
+| DELETE | `/settings/profiles/:id` | Delete profile |
+| POST | `/settings/profiles/:id/activate` | Make profile active |
+| POST | `/settings/profiles/import` | Import from `official` or `cc-switch` |
+| GET | `/settings/credential-sources/official` | Preview `~/.claude/settings.json` |
+| GET | `/settings/credential-sources/cc-switch` | List CC-Switch Claude providers |

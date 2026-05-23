@@ -7,6 +7,41 @@ import '../../state/settings_store.dart';
 import '../widgets/model_picker.dart';
 import 'home_page.dart';
 
+enum _AddProfileChoice { official, ccSwitch, manual }
+
+class _ProviderBadge extends StatelessWidget {
+  const _ProviderBadge({required this.provider});
+  final String? provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (label, color) = switch (provider) {
+      'anthropic' => ('Anthropic', const Color(0xFFCC785C)),
+      'openai' => ('OpenAI', const Color(0xFF10A37F)),
+      'google' => ('Google', const Color(0xFF4285F4)),
+      'opencode' => ('OpenCode', const Color(0xFF7C3AED)),
+      _ => (provider == null || provider!.isEmpty ? 'Other' : provider!, scheme.outline),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+      ),
+    );
+  }
+}
+
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key, this.firstRun = false});
   final bool firstRun;
@@ -149,6 +184,339 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
     if (result == true) {
       await _loadProfiles();
+    }
+  }
+
+  Future<void> _openAddProfileSheet() async {
+    final url = _baseUrlCtrl.text.trim();
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Set the server URL first')),
+      );
+      return;
+    }
+    final choice = await showModalBottomSheet<_AddProfileChoice>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Add credential profile',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_open_outlined),
+              title: const Text('From local config files'),
+              subtitle: const Text(
+                'Claude ~/.claude/settings.json, Codex ~/.codex/auth.json',
+              ),
+              onTap: () => Navigator.pop(ctx, _AddProfileChoice.official),
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz_outlined),
+              title: const Text('From CC-Switch'),
+              subtitle: const Text(
+                'Pick any provider configured in CC-Switch',
+              ),
+              onTap: () => Navigator.pop(ctx, _AddProfileChoice.ccSwitch),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Enter manually'),
+              subtitle: const Text(
+                'Paste API keys for one or more providers',
+              ),
+              onTap: () => Navigator.pop(ctx, _AddProfileChoice.manual),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _AddProfileChoice.official:
+        await _importFromSource(
+          source: 'official',
+          dialogTitle: 'Pick a local config file',
+          emptyMessage:
+              'No credentials found in ~/.claude/settings.json or ~/.codex/auth.json',
+          fetch: (c) => c.listOfficialCredentials(),
+        );
+        break;
+      case _AddProfileChoice.ccSwitch:
+        await _importFromSource(
+          source: 'cc-switch',
+          dialogTitle: 'Pick a CC-Switch provider',
+          emptyMessage:
+              'No providers found in CC-Switch (or node:sqlite unavailable)',
+          fetch: (c) => c.listCcSwitchCredentials(),
+        );
+        break;
+      case _AddProfileChoice.manual:
+        await _openProfileEditor();
+        break;
+    }
+  }
+
+  Future<void> _importFromSource({
+    required String source,
+    required String dialogTitle,
+    required String emptyMessage,
+    required Future<List<Map<String, dynamic>>> Function(GatewayClient) fetch,
+  }) async {
+    final url = _baseUrlCtrl.text.trim();
+    if (url.isEmpty) return;
+    final client = GatewayClient(
+      baseUrl: Uri.parse(url),
+      bearerToken: _tokenCtrl.text.trim(),
+    );
+    List<Map<String, dynamic>> entries;
+    try {
+      entries = await fetch(client);
+    } catch (err) {
+      client.close();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to read source: $err')),
+      );
+      return;
+    }
+    if (entries.isEmpty) {
+      client.close();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(emptyMessage)),
+      );
+      return;
+    }
+    final picked = await _pickCredentialEntry(entries, title: dialogTitle);
+    if (picked == null) {
+      client.close();
+      return;
+    }
+    final providerLabel = _providerDisplay(picked['provider']?.toString());
+    final defaultName = '${picked['label'] ?? providerLabel} ($providerLabel)';
+    final name = await _promptProfileName(
+      defaultName: defaultName,
+      entry: picked,
+    );
+    if (name == null) {
+      client.close();
+      return;
+    }
+    try {
+      await client.importProfile(
+        name: name,
+        source: source,
+        sourceId: picked['id']?.toString(),
+        makeActive: _profiles.isEmpty,
+      );
+    } catch (err) {
+      client.close();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $err')),
+      );
+      return;
+    }
+    client.close();
+    await _loadProfiles();
+  }
+
+  Future<Map<String, dynamic>?> _pickCredentialEntry(
+    List<Map<String, dynamic>> entries, {
+    required String title,
+  }) async {
+    if (entries.length == 1) return entries.first;
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(title),
+        children: [
+          for (final entry in entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, entry),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      entry['isCurrent'] == true
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: entry['isCurrent'] == true
+                          ? Colors.green
+                          : Theme.of(ctx).disabledColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  entry['label']?.toString() ?? 'Unnamed',
+                                  style: Theme.of(ctx)
+                                      .textTheme
+                                      .bodyLarge
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _ProviderBadge(
+                                provider: entry['provider']?.toString(),
+                              ),
+                            ],
+                          ),
+                          if (entry['tokenPreview'] != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                entry['tokenPreview'].toString(),
+                                style: Theme.of(ctx)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                              ),
+                            ),
+                          if (entry['baseUrl'] != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                entry['baseUrl'].toString(),
+                                style: Theme.of(ctx).textTheme.bodySmall,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _promptProfileName({
+    required String defaultName,
+    required Map<String, dynamic> entry,
+  }) async {
+    final ctrl = TextEditingController(text: defaultName);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Name this profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          entry['label']?.toString() ?? '',
+                          style: Theme.of(ctx)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _ProviderBadge(
+                        provider: entry['provider']?.toString(),
+                      ),
+                    ],
+                  ),
+                  if (entry['tokenPreview'] != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      entry['tokenPreview'].toString(),
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                            fontFeatures: const [
+                              FontFeature.tabularFigures(),
+                            ],
+                          ),
+                    ),
+                  ],
+                  if (entry['baseUrl'] != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      entry['baseUrl'].toString(),
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Profile name'),
+              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return (result == null || result.isEmpty) ? null : result;
+  }
+
+  String _providerDisplay(String? provider) {
+    switch (provider) {
+      case 'anthropic':
+        return 'Anthropic';
+      case 'openai':
+        return 'OpenAI';
+      case 'google':
+        return 'Google';
+      case 'opencode':
+        return 'OpenCode';
+      default:
+        return provider == null || provider.isEmpty ? 'Provider' : provider;
     }
   }
 
@@ -320,6 +688,41 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             )
           else ...[
+            if (_profiles.isEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'No credentials yet',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'The gateway holds all API credentials. Add one to start a session — import from local config files, pick from CC-Switch, or paste keys manually.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
             for (final profile in _profiles)
               _ProfileTile(
                 profile: profile,
@@ -337,7 +740,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: () => _openProfileEditor(),
+              onPressed: _openAddProfileSheet,
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Add Profile'),
             ),

@@ -16,6 +16,23 @@ const {
 } = require('./cli');
 const { OpenCodeServerManager } = require('./opencode_server');
 
+const MODEL_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const modelCache = new Map();
+
+function cachedModels(key, fetchFn) {
+  const entry = modelCache.get(key);
+  if (entry && Date.now() - entry.ts < MODEL_CACHE_TTL) return entry.promise;
+  const promise = fetchFn().then((models) => {
+    modelCache.set(key, { ts: Date.now(), promise: Promise.resolve(models) });
+    return models;
+  }).catch((err) => {
+    modelCache.delete(key);
+    throw err;
+  });
+  modelCache.set(key, { ts: Date.now(), promise });
+  return promise;
+}
+
 const CODEX_COMMANDS = [
   { name: '/mcp', description: 'Show MCP server status' },
   { name: '/personality', description: 'Set personality' },
@@ -160,7 +177,11 @@ class CodexAdapter {
     };
   }
 
-  async models() {
+  models() {
+    return cachedModels('codex', () => this._fetchModels());
+  }
+
+  async _fetchModels() {
     const result = await runCapture(this.command, ['debug', 'models', '--bundled']);
     if (result.exitCode === 0) {
       try {
@@ -239,101 +260,6 @@ function buildCodexArgs(session) {
   return args;
 }
 
-/**
- * Read the active Claude provider from CC-Switch's SQLite database.
- * Returns { baseUrl, authToken } or null if not available.
- *
- * CC-Switch is a desktop app that manages multiple Claude/Codex/etc API
- * provider configurations. The DB is at ~/.cc-switch/cc-switch.db.
- *
- * Schema (relevant table):
- *   providers(id, app_type, name, settings_config, is_current, ...)
- *   settings_config is JSON like:
- *     { "env": { "ANTHROPIC_BASE_URL": "...", "ANTHROPIC_AUTH_TOKEN": "..." } }
- */
-async function readCcSwitchClaudeProvider() {
-  try {
-    const dbPath = path.join(os.homedir(), '.cc-switch', 'cc-switch.db');
-    // Quick existence check before importing node:sqlite (which is gated)
-    try {
-      await fs.access(dbPath);
-    } catch {
-      return null;
-    }
-    // node:sqlite was experimental in 22.x and stable in 24.x.
-    // Use dynamic import to avoid breaking older Node.
-    let DatabaseSync;
-    try {
-      ({ DatabaseSync } = require('node:sqlite'));
-    } catch {
-      return null;
-    }
-    // Copy the file to a temp path to avoid SQLITE_BUSY when CC-Switch app
-    // is running and holding a write lock.
-    const tmpPath = path.join(
-      os.tmpdir(),
-      `cc-switch-${process.pid}-${Date.now()}.db`,
-    );
-    try {
-      await fs.copyFile(dbPath, tmpPath);
-    } catch {
-      return null;
-    }
-    let db;
-    try {
-      db = new DatabaseSync(tmpPath, { readOnly: true });
-      const row = db
-        .prepare(
-          "SELECT settings_config FROM providers WHERE app_type='claude' AND is_current=1 LIMIT 1",
-        )
-        .get();
-      if (!row || !row.settings_config) return null;
-      const cfg = JSON.parse(row.settings_config);
-      const env = cfg && cfg.env ? cfg.env : {};
-      const authToken = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY;
-      const baseUrl = env.ANTHROPIC_BASE_URL;
-      if (!authToken) return null;
-      return { authToken, baseUrl };
-    } finally {
-      try {
-        if (db) db.close();
-      } catch {}
-      fs.unlink(tmpPath).catch(() => {});
-    }
-  } catch (err) {
-    console.warn(`[claude-code] CC-Switch read failed: ${err.message}`);
-    return null;
-  }
-}
-
-/**
- * Read Claude official CLI settings from ~/.claude/settings.json.
- * Returns { baseUrl, authToken } or null.
- * Skips if the token is "PROXY_MANAGED" (managed by CC-Switch local proxy).
- */
-async function readClaudeOfficialSettings() {
-  try {
-    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
-    let raw;
-    try {
-      raw = await fs.readFile(settingsPath, 'utf-8');
-    } catch {
-      return null;
-    }
-    const cfg = JSON.parse(raw);
-    const env = cfg && cfg.env ? cfg.env : {};
-    const authToken = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY;
-    if (!authToken || authToken === 'PROXY_MANAGED') return null;
-    const baseUrl = env.ANTHROPIC_BASE_URL;
-    // Skip local proxy URLs (CC-Switch proxy) — they don't support /v1/models
-    if (baseUrl && /127\.0\.0\.1|localhost/i.test(baseUrl)) return null;
-    return { authToken, baseUrl };
-  } catch (err) {
-    console.warn(`[claude-code] Official settings read failed: ${err.message}`);
-    return null;
-  }
-}
-
 class ClaudeCodeAdapter {
   constructor({ profileStore } = {}) {
     this.id = 'claude-code';
@@ -360,8 +286,12 @@ class ClaudeCodeAdapter {
     };
   }
 
-  async models() {
-    // 1. Explicit env var override
+  models() {
+    return cachedModels("claude-code", () => this._fetchModels());
+  }
+
+  async _fetchModels() {
+    // 1. Explicit env var override (list of model IDs, not credentials).
     const envModels = (process.env.CLAUDE_CODE_MODELS || '')
       .split(',')
       .map((value) => value.trim())
@@ -370,35 +300,14 @@ class ClaudeCodeAdapter {
       return envModels.map((id) => ({ id, displayName: id, raw: { id } }));
     }
 
-    // 2. Try fetching from Anthropic API (or compatible proxy).
-    //    Auth resolution order:
-    //      a) ANTHROPIC_API_KEY env (official)
-    //      b) ANTHROPIC_AUTH_TOKEN env (CLI-style bearer)
-    //      c) Active provider in CC-Switch DB (~/.cc-switch/cc-switch.db)
-    //      d) Official Claude settings (~/.claude/settings.json)
-    let apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
-    let baseUrl = process.env.ANTHROPIC_BASE_URL;
-    if (!apiKey) {
-      const profileKey = this.profileStore?.getKeyForProvider('anthropic');
-      if (profileKey?.key) {
-        apiKey = profileKey.key;
-        if (!baseUrl && profileKey.baseUrl) baseUrl = profileKey.baseUrl;
-      }
-    }
-    if (!apiKey) {
-      const ccs = await readCcSwitchClaudeProvider();
-      if (ccs) {
-        apiKey = ccs.authToken;
-        if (!baseUrl) baseUrl = ccs.baseUrl;
-      }
-    }
-    if (!apiKey) {
-      const official = await readClaudeOfficialSettings();
-      if (official) {
-        apiKey = official.authToken;
-        if (!baseUrl) baseUrl = official.baseUrl;
-      }
-    }
+    // 2. Fetch from Anthropic API using the active profile's credentials.
+    //    Credentials live only in the gateway profile store — no implicit
+    //    fallback to env vars, CC-Switch, or ~/.claude/settings.json. To pull
+    //    a live model list, the user must first import a profile via the
+    //    /settings/credential-sources/* + /settings/profiles/import flow.
+    const profileKey = this.profileStore?.getKeyForProvider('anthropic');
+    const apiKey = profileKey?.key || null;
+    const baseUrl = profileKey?.baseUrl || null;
     if (apiKey) {
       try {
         const url = (baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
@@ -549,10 +458,18 @@ class OpenCodeAdapter {
     this.displayName = 'OpenCode';
     this.command = command || resolveOpenCodeCommand();
     this.profileStore = profileStore || null;
-    this.server = server || new OpenCodeServerManager({
-      command: this.command,
-      extraEnv: this._buildProfileEnv(),
-    });
+    this._explicitServer = server || null;
+    this._server = null;
+  }
+
+  get server() {
+    if (!this._server) {
+      this._server = this._explicitServer || new OpenCodeServerManager({
+        command: this.command,
+        extraEnv: this._buildProfileEnv(),
+      });
+    }
+    return this._server;
   }
 
   async metadata(projectDirectory) {
@@ -574,7 +491,11 @@ class OpenCodeAdapter {
     };
   }
 
-  async models() {
+  models() {
+    return cachedModels("opencode", () => this._fetchModels());
+  }
+
+  async _fetchModels() {
     try {
       const providers = await this.server.request('/provider');
       const models = providerModels(providers);

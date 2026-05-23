@@ -10,7 +10,13 @@ agent execution; the app only talks to this server.
 - OpenCode: `opencode serve` HTTP/SSE proxy, with `opencode run --format json`
   fallback when server mode is unavailable
 
-The gateway uses the CLI login state already configured on this machine.
+The gateway holds all API credentials itself, in
+`~/.gateway/profiles.json`. There is no implicit fallback to environment
+variables, CC-Switch, or `~/.claude/settings.json` at agent run time —
+credentials must be **explicitly imported** through the settings UI or the
+`/settings/profiles*` endpoints documented below.
+
+Multiple profiles are supported; exactly one is active at a time.
 
 ## Run
 
@@ -91,6 +97,36 @@ POST /sessions/:sessionId/messages
 POST /sessions/:sessionId/abort
 GET  /sessions/:sessionId/events
 ```
+
+### Credentials
+
+```text
+GET  /settings/active-profile
+GET  /settings/profiles
+POST /settings/profiles
+PATCH /settings/profiles/:profileId
+DELETE /settings/profiles/:profileId
+POST /settings/profiles/:profileId/activate
+POST /settings/profiles/import
+GET  /settings/credential-sources/official
+GET  /settings/credential-sources/cc-switch
+```
+
+- **`/settings/profiles`** — CRUD over the gateway-owned credential store.
+  Keys are returned masked.
+- **`/settings/credential-sources/official`** — preview entries discoverable
+  in known per-provider config files. Currently:
+  - Claude: `~/.claude/settings.json` (`provider: "anthropic"`)
+  - Codex: `~/.codex/auth.json` (`provider: "openai"`)
+- **`/settings/credential-sources/cc-switch`** — preview entries discoverable
+  in `~/.cc-switch/cc-switch.db`. Lists **every** supported provider regardless
+  of `app_type` (`claude` → `anthropic`, `codex` → `openai`); the active
+  provider per `app_type` is flagged via `isCurrent: true`. Returns `[]` if
+  `node:sqlite` is unavailable (Node < 22).
+- **`/settings/profiles/import`** — body
+  `{ name, source, sourceId?, makeActive? }` where `source` is `"official"` or
+  `"cc-switch"`. Creates a profile populated with the discovered credential
+  under the entry's declared `provider` slot.
 
 `/sessions/:sessionId/events` is SSE. Each event uses the normalized envelope:
 
