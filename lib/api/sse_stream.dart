@@ -1,8 +1,7 @@
 /// Minimal Server-Sent Events client using dart:io HttpClient for true
 /// chunked streaming on native iOS.
 ///
-/// dart:io does NOT exist on Flutter Web — that's fine, the app uses a
-/// polling fallback in chat_store.dart for web builds.
+/// This native client relies on dart:io and is used by the mobile app.
 // ignore_for_file: depend_on_referenced_packages
 library;
 

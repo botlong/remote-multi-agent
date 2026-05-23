@@ -63,7 +63,9 @@ class AppSettings {
 }
 
 class SettingsController extends StateNotifier<AppSettings> {
-  SettingsController(this._prefs) : super(_load(_prefs));
+  SettingsController(this._prefs) : super(_load(_prefs)) {
+    _prefs.remove(_kLegacyToken);
+  }
 
   final SharedPreferences _prefs;
 
@@ -123,6 +125,7 @@ class SettingsController extends StateNotifier<AppSettings> {
   }
 
   static const _kBaseUrl = 'oc.baseUrl';
+  static const _kLegacyToken = 'oc.bearerToken';
   static const _kProvider = 'oc.providerId';
   static const _kModel = 'oc.modelId';
   static const _kThemeMode = 'oc.themeMode';
