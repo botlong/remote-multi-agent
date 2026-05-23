@@ -26,16 +26,13 @@ function resolveCodexCommand() {
 function resolveOpenCodeCommand() {
   if (process.env.OPENCODE_BIN) return commandFromPath(process.env.OPENCODE_BIN);
   if (process.platform === 'win32') {
-    const exe = path.join(
-      process.env.APPDATA || '',
-      'npm',
-      'node_modules',
-      'opencode-ai',
-      'bin',
-      'opencode.exe',
-    );
+    const exe = findGlobalNpmPackageBin('opencode-ai', ['bin', 'opencode.exe']);
     if (fs.existsSync(exe)) {
       return { command: exe, prefixArgs: [], shell: false };
+    }
+    const shim = path.join(process.env.APPDATA || '', 'npm', 'opencode.cmd');
+    if (fs.existsSync(shim)) {
+      return { command: shim, prefixArgs: [], shell: true };
     }
   }
   return {
@@ -83,6 +80,39 @@ function commandFromPath(command) {
     };
   }
   return { command, prefixArgs: [], shell: false };
+}
+
+function findGlobalNpmPackageBin(packageName, relativeParts) {
+  const nodeModules = path.join(process.env.APPDATA || '', 'npm', 'node_modules');
+  const exact = path.join(nodeModules, packageName, ...relativeParts);
+  if (fs.existsSync(exact)) return exact;
+
+  let directories = [];
+  try {
+    directories = fs
+      .readdirSync(nodeModules, { withFileTypes: true })
+      .filter((entry) => (
+        entry.isDirectory() &&
+        entry.name.startsWith(`.${packageName}-`)
+      ))
+      .map((entry) => path.join(nodeModules, entry.name));
+  } catch {
+    return exact;
+  }
+
+  directories.sort((a, b) => {
+    try {
+      return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
+    } catch {
+      return 0;
+    }
+  });
+
+  for (const directory of directories) {
+    const candidate = path.join(directory, ...relativeParts);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return exact;
 }
 
 function commandExists(spec) {

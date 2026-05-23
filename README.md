@@ -86,11 +86,12 @@ Build and device runs target mobile platforms. iOS packaging is handled by CI.
 
 ```bash
 git push
-gh run watch
-gh run download --name ios-ipa
+gh run list --limit 10
+gh run download <run-id> --name ios-ipa --dir build/artifacts/ios-ipa
 ```
 
-Install the unsigned IPA with Sideloadly or AltStore.
+For the agent workflow to verify Actions and download the IPA artifact locally,
+see `docs/workflow.md`.
 
 ## Project Layout
 
