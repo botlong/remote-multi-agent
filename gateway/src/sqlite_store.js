@@ -61,6 +61,9 @@ class SqliteStore {
         data TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(sessionId, ordering);
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        text, content='', contentless_delete=1
+      );
     `);
   }
 
@@ -183,6 +186,11 @@ class SqliteStore {
     const ordering = (maxRow?.m ?? -1) + 1;
     this.db.prepare('INSERT INTO messages (id, sessionId, ordering, data) VALUES (?, ?, ?, ?)')
       .run(message.id, sessionId, ordering, JSON.stringify(message));
+    const text = this._extractText(message);
+    if (text) {
+      this.db.prepare('INSERT INTO messages_fts (rowid, text) VALUES (?, ?)')
+        .run(ordering + 1, text);
+    }
     await this.touchSession(sessionId);
     return message;
   }
@@ -212,6 +220,56 @@ class SqliteStore {
       .run(Date.now(), sessionId);
   }
 
+  _extractText(message) {
+    if (!message || !message.parts) return '';
+    const chunks = [];
+    for (const part of message.parts) {
+      if (part.type === 'text' && part.text) chunks.push(part.text);
+      if (part.type === 'tool' && part.output) chunks.push(part.output);
+    }
+    return chunks.join(' ').trim();
+  }
+
+  search(query, { projectId } = {}) {
+    if (!query || typeof query !== 'string') return [];
+    const ftsQuery = query.replace(/['"]/g, '').trim();
+    if (!ftsQuery) return [];
+
+    let rows;
+    if (projectId) {
+      rows = this.db.prepare(`
+        SELECT m.sessionId, m.data, s.title AS sessionTitle, s.projectId
+        FROM messages m
+        JOIN messages_fts f ON f.rowid = m.ordering + 1
+        JOIN sessions s ON s.id = m.sessionId
+        WHERE messages_fts MATCH ? AND s.projectId = ?
+        ORDER BY f.rank
+        LIMIT 50
+      `).all(ftsQuery, projectId);
+    } else {
+      rows = this.db.prepare(`
+        SELECT m.sessionId, m.data, s.title AS sessionTitle, s.projectId
+        FROM messages m
+        JOIN messages_fts f ON f.rowid = m.ordering + 1
+        JOIN sessions s ON s.id = m.sessionId
+        WHERE messages_fts MATCH ?
+        ORDER BY f.rank
+        LIMIT 50
+      `).all(ftsQuery);
+    }
+
+    return rows.map(row => {
+      const msg = JSON.parse(row.data);
+      return {
+        sessionId: row.sessionId,
+        sessionTitle: row.sessionTitle,
+        projectId: row.projectId,
+        messageId: msg.id,
+        text: this._extractText(msg).substring(0, 200),
+      };
+    });
+  }
+
   _deserializeSession(row) {
     return {
       ...row,
@@ -221,6 +279,20 @@ class SqliteStore {
 
   // Compatibility: JsonStore exposes a save() — noop for SQLite
   async save() {}
+
+  async resetOrphaned() {
+    this.db.prepare("UPDATE sessions SET status = 'idle' WHERE status = 'running'").run();
+    const rows = this.db.prepare("SELECT id, data FROM messages WHERE data LIKE '%\"status\":\"running\"%'").all();
+    for (const row of rows) {
+      const msg = JSON.parse(row.data);
+      if (msg.status === 'running') {
+        msg.status = 'error';
+        msg.time = msg.time || {};
+        msg.time.completed = msg.time.completed || Date.now();
+        this.db.prepare('UPDATE messages SET data = ? WHERE id = ?').run(JSON.stringify(msg), row.id);
+      }
+    }
+  }
 }
 
 async function normalizeDirectory(directory) {

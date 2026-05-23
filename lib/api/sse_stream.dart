@@ -33,12 +33,14 @@ class SseConfig {
     this.bearerToken,
     this.reconnectMinDelay = const Duration(seconds: 1),
     this.reconnectMaxDelay = const Duration(seconds: 30),
+    this.maxRetries = 12,
   });
 
   final Uri url;
   final String? bearerToken;
   final Duration reconnectMinDelay;
   final Duration reconnectMaxDelay;
+  final int maxRetries;
 }
 
 /// Connection lifecycle state.
@@ -277,6 +279,10 @@ class SseClient {
   void _scheduleReconnect() {
     if (_disposed) return;
     _attempt++;
+    if (_attempt > _config.maxRetries) {
+      debugPrint('[SseClient] max retries ($_attempt) reached, giving up');
+      return;
+    }
     final base = _config.reconnectMinDelay.inMilliseconds;
     final max = _config.reconnectMaxDelay.inMilliseconds;
     // Exponential: base * 2^(attempt-1), capped at max.
@@ -285,6 +291,13 @@ class SseClient {
     Future<void>.delayed(Duration(milliseconds: wait), () {
       if (!_disposed) _start();
     });
+  }
+
+  /// Manually trigger a reconnect (e.g. from a "Retry" button in the UI).
+  void reconnect() {
+    if (_disposed) return;
+    _attempt = 0;
+    _start();
   }
 
   // -------------------------------------------------------------------------

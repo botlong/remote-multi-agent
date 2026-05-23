@@ -53,6 +53,25 @@ class JsonStore {
     }, 500);
   }
 
+  async resetOrphaned() {
+    for (const session of this.data.sessions) {
+      if (session.status === 'running') {
+        session.status = 'idle';
+      }
+    }
+    for (const messages of Object.values(this.data.messagesBySession || {})) {
+      if (!Array.isArray(messages)) continue;
+      for (const msg of messages) {
+        if (msg && msg.status === 'running') {
+          msg.status = 'error';
+          msg.time = msg.time || {};
+          msg.time.completed = msg.time.completed || Date.now();
+        }
+      }
+    }
+    await this.save();
+  }
+
   async writeSnapshot() {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     const temp = `${this.file}.${process.pid}.${crypto.randomUUID()}.tmp`;
