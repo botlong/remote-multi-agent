@@ -15,7 +15,6 @@ import 'package:flutter/material.dart';
 Future<String?> showDirectoryPicker(
   BuildContext context, {
   required String gatewayBaseUrl,
-  required String bearerToken,
   String? initialPath,
 }) {
   return showModalBottomSheet<String>(
@@ -25,7 +24,6 @@ Future<String?> showDirectoryPicker(
     useSafeArea: true,
     builder: (_) => _DirectoryPickerSheet(
       gatewayBaseUrl: gatewayBaseUrl,
-      bearerToken: bearerToken,
       initialPath: initialPath ?? 'D:\\',
     ),
   );
@@ -34,12 +32,10 @@ Future<String?> showDirectoryPicker(
 class _DirectoryPickerSheet extends StatefulWidget {
   const _DirectoryPickerSheet({
     required this.gatewayBaseUrl,
-    required this.bearerToken,
     required this.initialPath,
   });
 
   final String gatewayBaseUrl;
-  final String bearerToken;
   final String initialPath;
 
   @override
@@ -65,10 +61,6 @@ class _DirectoryPickerSheetState extends State<_DirectoryPickerSheet> {
         baseUrl: widget.gatewayBaseUrl.replaceAll(RegExp(r'/$'), ''),
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
-        headers: {
-          if (widget.bearerToken.isNotEmpty)
-            'Authorization': 'Bearer ${widget.bearerToken}',
-        },
       ),
     );
     _loadDirs();

@@ -713,7 +713,6 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     final path = await showDirectoryPicker(
       context,
       gatewayBaseUrl: settings.baseUrl,
-      bearerToken: settings.bearerToken,
       initialPath: widget.project.directory,
     );
     if (path == null || !mounted) return;

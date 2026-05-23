@@ -9,7 +9,6 @@ final gatewayClientProvider = Provider<GatewayClient>((ref) {
   final settings = ref.watch(settingsControllerProvider);
   final client = GatewayClient(
     baseUrl: Uri.parse(settings.baseUrl),
-    bearerToken: settings.bearerToken,
   );
   ref.onDispose(client.close);
   return client;
