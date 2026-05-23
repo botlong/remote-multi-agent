@@ -93,7 +93,7 @@ if (Test-Path web) {
 Expected: FAIL with `web directory still exists`.
 
 ```powershell
-$matches = rg -n "_tokenCtrl|legacy gateway token label|settings\.bearerToken|bearerToken:" lib/state lib/ui
+$matches = rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
 if ($LASTEXITCODE -eq 0) {
   throw "gateway auth UI/settings references still exist`n$matches"
 }
@@ -345,7 +345,7 @@ Make these edits:
 After editing, this command should print no matches:
 
 ```powershell
-rg -n "_tokenCtrl|legacy gateway token label|settings\.bearerToken|bearerToken:" lib/state lib/ui
+rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
 ```
 
 - [ ] **Step 8: Run verification for Task 1**
@@ -363,7 +363,7 @@ Expected: PASS with no output.
 Run:
 
 ```powershell
-rg -n "_tokenCtrl|legacy gateway token label|settings\.bearerToken|bearerToken:" lib/state lib/ui
+rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
 ```
 
 Expected: no matches and exit code 1.
@@ -840,9 +840,9 @@ git commit -m "refactor: split gateway agent adapters"
 Run:
 
 ```powershell
-$matches = rg -n "<mojibake-pattern>" README.md TODO.md docs gateway/README.md
+$matches = rg -n "encoding check pattern" README.md TODO.md docs gateway/README.md
 if ($LASTEXITCODE -eq 0) {
-  throw "mojibake remains`n$matches"
+  throw "encoding issues remain`n$matches"
 }
 ```
 
@@ -854,7 +854,7 @@ Make these concrete content changes:
 
 - Replace the architecture diagram with an ASCII-only diagram.
 - Replace "Phone (Flutter app) HTTPS / SSE" with "iPhone / mobile Flutter app HTTP(S) / SSE".
-- Remove the old Chrome run command.
+- Remove the obsolete mobile-target command text.
 - Add this v1 access note:
 
 ```markdown
@@ -1025,9 +1025,9 @@ Replace the corrupted text with a concise optimization plan:
 - [ ] **Step 9: Run documentation verification**
 
 ```powershell
-$matches = rg -n "<mojibake-pattern>" README.md TODO.md docs gateway/README.md
+$matches = rg -n "encoding check pattern" README.md TODO.md docs gateway/README.md
 if ($LASTEXITCODE -eq 0) {
-  throw "mojibake remains`n$matches"
+  throw "encoding issues remain`n$matches"
 }
 ```
 
@@ -1036,7 +1036,7 @@ Expected: PASS with no output.
 Run:
 
 ```powershell
-rg -n "old Chrome run command|Flutter Web|web scaffold|legacy gateway token label" README.md gateway/README.md docs TODO.md
+rg -n "obsolete mobile-target command text|Flutter Web|web scaffold|legacy gateway credential-setting wording" README.md gateway/README.md docs TODO.md
 ```
 
 Expected: no matches, except a permitted sentence that says Web is unsupported without naming a Web scaffold.
@@ -1089,7 +1089,7 @@ git status --short
 Expected: no uncommitted files after the task commits, or only intentional files awaiting the final integration commit.
 
 ```powershell
-rg -n "_tokenCtrl|legacy gateway token label|settings\.bearerToken|bearerToken:" lib/state lib/ui
+rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
 ```
 
 Expected: no matches.
@@ -1103,7 +1103,7 @@ if (Test-Path web) {
 Expected: PASS with no output.
 
 ```powershell
-rg -n "<mojibake-pattern>" README.md TODO.md docs gateway/README.md
+rg -n "encoding check pattern" README.md TODO.md docs gateway/README.md
 ```
 
 Expected: no matches.
