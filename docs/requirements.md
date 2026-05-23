@@ -2,7 +2,7 @@
 
 ## Goal
 
-The iOS app should support three agent backends in one workspace:
+The mobile/iOS app should support three agent backends in one workspace:
 
 - OpenCode
 - Claude Code
@@ -45,10 +45,13 @@ The session structure inside each project should be:
 
 ## App and gateway split
 
-- The iOS app and the server gateway should be implemented and deployed separately.
+- The mobile/iOS app and the server gateway should be implemented and deployed separately.
 - The app is only responsible for sending and receiving messages and rendering conversation state.
 - The app must not have code execution capability.
 - All agent execution logic lives in the gateway.
 - The gateway can be open source to build user trust.
 - The app can remain closed source and paid.
 - For the first version, the gateway can ship without authentication.
+- V1 targets mobile/iOS. Flutter Web is not supported.
+- V1 gateway access is trusted-network only. It does not require or validate a bearer token.
+- Authentication remains outside the v1 implementation scope.
