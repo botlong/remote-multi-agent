@@ -10,6 +10,7 @@
  * Supported providers:
  *   - anthropic  (Claude)
  *   - openai     (Codex)
+ *   - opencode   (OpenCode)
  *
  * Sources:
  *   - official:  per-provider config files (~/.claude/settings.json,
@@ -31,7 +32,9 @@ const CC_SWITCH_DB_PATH = path.join(os.homedir(), '.cc-switch', 'cc-switch.db');
 
 const APP_TYPE_TO_PROVIDER = {
   claude: 'anthropic',
+  'claude-desktop': 'anthropic',
   codex: 'openai',
+  opencode: 'opencode',
 };
 
 const CACHE_TTL_MS = 30_000;
@@ -85,7 +88,7 @@ function configurePaths(options) {
  * @typedef {Object} CredentialEntry
  * @property {string} id          Stable identifier within the source.
  * @property {'official'|'cc-switch'} source
- * @property {'anthropic'|'openai'} provider Gateway provider slot for this credential.
+ * @property {'anthropic'|'openai'|'opencode'} provider Gateway provider slot for this credential.
  * @property {string} label       Human-readable name.
  * @property {boolean} hasToken   True iff a token was found.
  * @property {string|null} authToken Raw token. **Caller must mask before HTTP.**
@@ -234,7 +237,7 @@ async function _readCcSwitchCredentials() {
       const extracted = _extractCcSwitchCred(row);
       if (!extracted || !extracted.authToken) continue;
       entries.push({
-        id: String(row.id),
+        id: _ccSwitchEntryId(row),
         source: 'cc-switch',
         provider,
         label: row.name || `${row.app_type} #${row.id}`,
@@ -242,7 +245,12 @@ async function _readCcSwitchCredentials() {
         authToken: extracted.authToken,
         baseUrl: extracted.baseUrl,
         isCurrent: Boolean(row.is_current),
-        raw: { providerId: row.id, appType: row.app_type },
+        raw: {
+          providerId: row.id,
+          appType: row.app_type,
+          ...(row.provider_type ? { providerType: row.provider_type } : {}),
+          ...(extracted.models ? { models: extracted.models } : {}),
+        },
       });
     }
     return entries;
@@ -257,8 +265,12 @@ async function _readCcSwitchCredentials() {
   }
 }
 
+function _ccSwitchEntryId(row) {
+  return `${row.app_type}:${row.id}`;
+}
+
 function _extractCcSwitchCred(row) {
-  if (row.app_type === 'claude') {
+  if (row.app_type === 'claude' || row.app_type === 'claude-desktop') {
     const cfg = _tryParseJson(row.settings_config);
     const env = (cfg && cfg.env) || {};
     const authToken = env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || null;
@@ -266,25 +278,64 @@ function _extractCcSwitchCred(row) {
     return { authToken, baseUrl: env.ANTHROPIC_BASE_URL || null };
   }
   if (row.app_type === 'codex') {
-    // CC-Switch stores Codex creds in `auth_config` (JSON) when available;
-    // older schemas might use `settings_config`.
+    const settings = _tryParseJson(row.settings_config);
+    // CC-Switch has used both a dedicated `auth_config` column and a nested
+    // `settings_config.auth` object across versions.
     const auth =
-      _tryParseJson(row.auth_config) || _tryParseJson(row.settings_config);
+      _tryParseJson(row.auth_config) ||
+      (settings && typeof settings.auth === 'object' ? settings.auth : null) ||
+      settings;
     const authToken =
-      (auth && (auth.OPENAI_API_KEY || auth.openai_api_key || auth.apiKey)) ||
+      (auth &&
+        (auth.OPENAI_API_KEY ||
+          auth.openai_api_key ||
+          auth.apiKey ||
+          auth.api_key)) ||
       null;
     let baseUrl =
-      (auth && (auth.OPENAI_BASE_URL || auth.openai_base_url)) || null;
-    // Codex `settings_config` is typically TOML; do a cheap regex grab if we
-    // didn't find a base URL in the auth blob.
-    if (!baseUrl && typeof row.settings_config === 'string') {
-      const match = row.settings_config.match(/base_url\s*=\s*"([^"]+)"/);
-      if (match) baseUrl = match[1];
-    }
+      (auth &&
+        (auth.OPENAI_BASE_URL ||
+          auth.openai_base_url ||
+          auth.baseUrl ||
+          auth.base_url)) ||
+      null;
+    const configText =
+      (settings && typeof settings.config === 'string' && settings.config) ||
+      (typeof row.settings_config === 'string' ? row.settings_config : '');
+    if (!baseUrl) baseUrl = _extractTomlString(configText, 'base_url');
     if (!authToken) return null;
     return { authToken, baseUrl };
   }
+  if (row.app_type === 'opencode') {
+    const cfg = _tryParseJson(row.settings_config);
+    const options = cfg && typeof cfg.options === 'object' ? cfg.options : {};
+    const authToken =
+      options.apiKey ||
+      options.api_key ||
+      options.OPENAI_API_KEY ||
+      options.openai_api_key ||
+      null;
+    const baseUrl =
+      options.baseURL ||
+      options.baseUrl ||
+      options.base_url ||
+      options.OPENAI_BASE_URL ||
+      options.openai_base_url ||
+      null;
+    if (!authToken) return null;
+    const models = cfg && typeof cfg.models === 'object'
+      ? Object.keys(cfg.models)
+      : undefined;
+    return { authToken, baseUrl, models };
+  }
   return null;
+}
+
+function _extractTomlString(raw, key) {
+  if (typeof raw !== 'string' || !raw) return null;
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = raw.match(new RegExp(`^\\s*${escaped}\\s*=\\s*"([^"]+)"`, 'm'));
+  return match ? match[1] : null;
 }
 
 function _tryParseJson(raw) {
@@ -315,7 +366,12 @@ async function loadCredential({ source, sourceId } = {}) {
   if (source === 'cc-switch') {
     const entries = await listCcSwitchCredentials();
     if (sourceId != null && sourceId !== '') {
-      return entries.find((e) => e.id === String(sourceId)) || null;
+      const id = String(sourceId);
+      return entries.find((e) => (
+        e.id === id ||
+        String(e.raw?.providerId) === id ||
+        `${e.raw?.appType}:${e.raw?.providerId}` === id
+      )) || null;
     }
     return entries.find((e) => e.isCurrent) || entries[0] || null;
   }

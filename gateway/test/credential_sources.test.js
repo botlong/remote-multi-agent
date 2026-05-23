@@ -206,6 +206,93 @@ test(
 );
 
 test(
+  'listCcSwitchCredentials reads current CC-Switch schema across visible app types',
+  { skip: !sqliteAvailable },
+  async (t) => {
+    const { DatabaseSync } = require('node:sqlite');
+    const root = await withTempPaths(t);
+    const dbPath = path.join(root, 'cc-switch.db');
+
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE providers (
+        id TEXT,
+        app_type TEXT NOT NULL,
+        name TEXT,
+        settings_config TEXT,
+        meta TEXT,
+        is_current INTEGER DEFAULT 0,
+        provider_type TEXT
+      );
+    `);
+    const insert = db.prepare(
+      'INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, provider_type) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    insert.run(
+      'shared-claude-id', 'claude', 'Claude CLI',
+      JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-cli-aaaaaaaaaa', ANTHROPIC_BASE_URL: 'https://claude.example' } }),
+      '{}', 1, 'anthropic',
+    );
+    insert.run(
+      'shared-claude-id', 'claude-desktop', 'Claude Desktop',
+      JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-desktop-bbbbbbbbbb', ANTHROPIC_BASE_URL: 'https://desktop.example' } }),
+      '{}', 0, 'anthropic',
+    );
+    insert.run(
+      'codex-json', 'codex', 'Codex JSON',
+      JSON.stringify({
+        auth: { OPENAI_API_KEY: 'sk-openai-json-cccc' },
+        config: 'model_provider = "codex-json"\nbase_url = "https://codex.example/v1"',
+      }),
+      '{}', 1, null,
+    );
+    insert.run(
+      'opencode-json', 'opencode', 'OpenCode JSON',
+      JSON.stringify({
+        options: {
+          apiKey: 'sk-opencode-dddddddddd',
+          baseURL: 'https://opencode.example/v1',
+        },
+        models: { 'gpt-5.5': { name: 'GPT 5.5' } },
+      }),
+      '{}', 0, null,
+    );
+    insert.run(
+      'codex-official', 'codex', 'OpenAI Official',
+      JSON.stringify({ auth: {}, config: '' }),
+      '{}', 0, null,
+    );
+    db.close();
+
+    configurePaths({ ccSwitchPath: dbPath });
+
+    const result = await listCcSwitchCredentials();
+    assert.equal(result.length, 4, 'should skip only entries without tokens');
+
+    assert.deepEqual(
+      result.map((entry) => entry.id),
+      [
+        'claude:shared-claude-id',
+        'claude-desktop:shared-claude-id',
+        'codex:codex-json',
+        'opencode:opencode-json',
+      ],
+    );
+
+    const byId = Object.fromEntries(result.map((entry) => [entry.id, entry]));
+    assert.equal(byId['claude:shared-claude-id'].provider, 'anthropic');
+    assert.equal(byId['claude-desktop:shared-claude-id'].provider, 'anthropic');
+    assert.equal(byId['codex:codex-json'].provider, 'openai');
+    assert.equal(byId['opencode:opencode-json'].provider, 'opencode');
+    assert.equal(byId['codex:codex-json'].authToken, 'sk-openai-json-cccc');
+    assert.equal(byId['codex:codex-json'].baseUrl, 'https://codex.example/v1');
+    assert.equal(byId['opencode:opencode-json'].authToken, 'sk-opencode-dddddddddd');
+    assert.equal(byId['opencode:opencode-json'].baseUrl, 'https://opencode.example/v1');
+    assert.deepEqual(byId['opencode:opencode-json'].raw.models, ['gpt-5.5']);
+  },
+);
+
+test(
   'loadCredential resolves cc-switch by id across providers',
   { skip: !sqliteAvailable },
   async (t) => {

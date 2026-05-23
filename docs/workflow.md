@@ -61,18 +61,48 @@ docker run --rm `
   bash -c "flutter pub get && flutter analyze && flutter test"
 ```
 
-## iOS CI 打包
+## iOS IPA 工作流
 
-iOS 打包由 GitHub Actions 处理，workflow 位于 `.github/workflows/ios.yml`。
+iOS 打包由 GitHub Actions 处理。给 agent 的标准流程如下：
+
+1. 确认本地分支已经推送，或 PR 已合并到 `main`。
+2. 查看最近的 workflow run：
 
 ```powershell
-git push
-gh run list --limit 3
-gh run watch <run-id>
-gh run download <run-id> --name ios-ipa
+gh run list --limit 10
 ```
 
-下载后的 unsigned IPA 可通过 Sideloadly 或 AltStore 安装到 iPhone。
+3. 找到最新的 `main` / `push` run，确认这些 workflow 成功：
+   - `CI`
+   - `iOS unsigned IPA`
+   - `Build IPA`
+
+4. 查看目标 run 的 artifact。优先使用 `iOS unsigned IPA` workflow 的 run id：
+
+```powershell
+gh api repos/botlong/remote-multi-agent/actions/runs/<run-id>/artifacts `
+  --jq '.artifacts[] | {name, expired, size_in_bytes, archive_download_url}'
+```
+
+5. 确认存在未过期的 `ios-ipa` artifact 后，下载到本地固定目录：
+
+```powershell
+New-Item -ItemType Directory -Force -Path "build\artifacts\ios-ipa" | Out-Null
+gh run download <run-id> --name ios-ipa --dir "build\artifacts\ios-ipa"
+Get-ChildItem -Path "build\artifacts\ios-ipa" -Force
+```
+
+如果只存在 `Build IPA` workflow 的 `ipa` artifact，下载到单独目录，避免和
+`ios-ipa` 混在一起：
+
+```powershell
+New-Item -ItemType Directory -Force -Path "build\artifacts\ipa" | Out-Null
+gh run download <run-id> --name ipa --dir "build\artifacts\ipa"
+Get-ChildItem -Path "build\artifacts\ipa" -Force
+```
+
+6. 最后向用户报告本地目录、IPA 文件名、run id 和 artifact 名称。不要提交 IPA；
+   `.gitignore` 已忽略 `/build/` 和 `*.ipa`。
 
 ## 常用命令
 

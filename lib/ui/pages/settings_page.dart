@@ -42,6 +42,74 @@ class _ProviderBadge extends StatelessWidget {
   }
 }
 
+class _CredentialEntryTile extends StatelessWidget {
+  const _CredentialEntryTile({
+    required this.entry,
+    required this.onTap,
+  });
+
+  final Map<String, dynamic> entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCurrent = entry['isCurrent'] == true;
+    final raw = entry['raw'];
+    final appType = raw is Map ? raw['appType']?.toString() : null;
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        isCurrent ? Icons.check_circle : Icons.radio_button_unchecked,
+        size: 18,
+        color: isCurrent ? Colors.green : Theme.of(context).disabledColor,
+      ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              entry['label']?.toString() ?? 'Unnamed',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _ProviderBadge(provider: entry['provider']?.toString()),
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (appType != null && appType.isNotEmpty)
+            Text(
+              appType,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          if (entry['tokenPreview'] != null)
+            Text(
+              entry['tokenPreview'].toString(),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontFeatures: const [
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+            ),
+          if (entry['baseUrl'] != null)
+            Text(
+              entry['baseUrl'].toString(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key, this.firstRun = false});
   final bool firstRun;
@@ -331,85 +399,111 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     required String title,
   }) async {
     if (entries.length == 1) return entries.first;
+    final grouped = _groupCredentialEntries(entries);
+    final groupKeys = grouped.keys.toList()
+      ..sort((a, b) {
+        final order =
+            _credentialGroupOrder(a).compareTo(_credentialGroupOrder(b));
+        if (order != 0) return order;
+        return _credentialGroupLabel(a).compareTo(_credentialGroupLabel(b));
+      });
+    final initialGroup = groupKeys.firstWhere(
+      (key) => grouped[key]!.any((entry) => entry['isCurrent'] == true),
+      orElse: () => groupKeys.first,
+    );
+
     return showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) => SimpleDialog(
+      builder: (ctx) => AlertDialog(
         title: Text(title),
-        children: [
-          for (final entry in entries)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, entry),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      entry['isCurrent'] == true
-                          ? Icons.check_circle
-                          : Icons.radio_button_unchecked,
-                      size: 18,
-                      color: entry['isCurrent'] == true
-                          ? Colors.green
-                          : Theme.of(ctx).disabledColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  entry['label']?.toString() ?? 'Unnamed',
-                                  style: Theme.of(ctx)
-                                      .textTheme
-                                      .bodyLarge
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _ProviderBadge(
-                                provider: entry['provider']?.toString(),
-                              ),
-                            ],
+        contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 560),
+            child: SingleChildScrollView(
+              child: ExpansionPanelList.radio(
+                initialOpenPanelValue: initialGroup,
+                children: [
+                  for (final key in groupKeys)
+                    ExpansionPanelRadio(
+                      value: key,
+                      headerBuilder: (context, isExpanded) {
+                        final items = grouped[key]!;
+                        final current =
+                            items.any((entry) => entry['isCurrent'] == true);
+                        return ListTile(
+                          dense: true,
+                          title: Text(_credentialGroupLabel(key)),
+                          subtitle: Text(
+                            current
+                                ? '${items.length} providers - current selected'
+                                : '${items.length} providers',
                           ),
-                          if (entry['tokenPreview'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                entry['tokenPreview'].toString(),
-                                style: Theme.of(ctx)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures(),
-                                      ],
-                                    ),
-                              ),
-                            ),
-                          if (entry['baseUrl'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                entry['baseUrl'].toString(),
-                                style: Theme.of(ctx).textTheme.bodySmall,
-                              ),
+                        );
+                      },
+                      body: Column(
+                        children: [
+                          for (final entry in grouped[key]!)
+                            _CredentialEntryTile(
+                              entry: entry,
+                              onTap: () => Navigator.pop(ctx, entry),
                             ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
-        ],
+          ),
+        ),
       ),
     );
+  }
+
+  Map<String, List<Map<String, dynamic>>> _groupCredentialEntries(
+    List<Map<String, dynamic>> entries,
+  ) {
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final entry in entries) {
+      final key = _credentialGroupKey(entry);
+      grouped.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(entry);
+    }
+    return grouped;
+  }
+
+  String _credentialGroupKey(Map<String, dynamic> entry) {
+    final raw = entry['raw'];
+    if (raw is Map && raw['appType'] != null) {
+      return raw['appType'].toString();
+    }
+    return entry['provider']?.toString() ?? 'other';
+  }
+
+  int _credentialGroupOrder(String key) {
+    return switch (key) {
+      'claude' => 0,
+      'claude-desktop' => 1,
+      'codex' => 2,
+      'opencode' => 3,
+      'anthropic' => 4,
+      'openai' => 5,
+      'google' => 6,
+      _ => 99,
+    };
+  }
+
+  String _credentialGroupLabel(String key) {
+    return switch (key) {
+      'claude' => 'Claude',
+      'claude-desktop' => 'Claude Desktop',
+      'codex' => 'Codex',
+      'opencode' => 'OpenCode',
+      'anthropic' => 'Anthropic',
+      'openai' => 'OpenAI',
+      'google' => 'Google',
+      _ => key.isEmpty ? 'Other' : key,
+    };
   }
 
   Future<String?> _promptProfileName({
@@ -1242,16 +1336,19 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
     // When editing, don't populate key fields with masked values.
     // Show masked values as hints only; empty field means "keep existing".
     final isEdit = existing != null;
-    _anthropicKeyCtrl =
-        TextEditingController(text: isEdit ? '' : (anthropic['key'] as String? ?? ''));
+    _anthropicKeyCtrl = TextEditingController(
+      text: isEdit ? '' : (anthropic['key'] as String? ?? ''),
+    );
     _anthropicBaseUrlCtrl =
         TextEditingController(text: anthropic['baseUrl'] as String? ?? '');
-    _openaiKeyCtrl =
-        TextEditingController(text: isEdit ? '' : (openai['key'] as String? ?? ''));
+    _openaiKeyCtrl = TextEditingController(
+      text: isEdit ? '' : (openai['key'] as String? ?? ''),
+    );
     _openaiBaseUrlCtrl =
         TextEditingController(text: openai['baseUrl'] as String? ?? '');
-    _opencodeKeyCtrl =
-        TextEditingController(text: isEdit ? '' : (opencode['key'] as String? ?? ''));
+    _opencodeKeyCtrl = TextEditingController(
+      text: isEdit ? '' : (opencode['key'] as String? ?? ''),
+    );
     _opencodeBaseUrlCtrl =
         TextEditingController(text: opencode['baseUrl'] as String? ?? '');
 
