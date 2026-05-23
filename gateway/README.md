@@ -74,15 +74,20 @@ Gateway agent adapters are split by agent:
 ```text
 gateway/src/agents/
   index.js
+  registry.js
   claude_code.js
   codex.js
   opencode.js
-  common.js
+  command_helpers.js
+  json_cli.js
+  model_cache.js
+  opencode_helpers.js
 ```
 
-Shared helpers live under `gateway/src/agents/`. The registry exposes the
-normalized metadata, model lists, command lists, and message execution contract
-used by the app.
+Shared helpers live under `gateway/src/agents/`: they handle command metadata
+and discovery, JSON CLI parsing, model caching, and OpenCode event/model
+normalization. The registry exposes the normalized metadata, model lists,
+command lists, and message execution contract used by the app.
 
 For OpenCode, the gateway creates a native OpenCode session through
 `POST /session?directory=...`, stores that id as `agentSessionId`, sends turns

@@ -153,16 +153,23 @@ gateway/
     server.js                    # HTTP server + route handlers
     agents/
       index.js                   # Agent adapter registry
+      registry.js                # Registry composition
       claude_code.js             # Claude Code adapter
       codex.js                   # Codex adapter
       opencode.js                # OpenCode adapter
-      common.js                  # Shared adapter helpers
+      command_helpers.js         # Command metadata and discovery helpers
+      json_cli.js                # JSON CLI runner and parsing helpers
+      model_cache.js             # Shared model-list cache
+      opencode_helpers.js        # OpenCode event/model normalization helpers
     store.js                     # JSON file-based session/message store
     cli.js                       # CLI process spawner
     events.js                    # SSE event bus
     fs_routes.js                 # /git/* and /files/* endpoints
     opencode_server.js           # OpenCode server adapter
 ```
+
+Agent helpers handle command metadata/discovery, JSON CLI parsing, model-list
+caching, and OpenCode event/model normalization.
 
 ## App Settings
 
@@ -180,10 +187,20 @@ store (`~/.gateway/profiles.json`) and imported on demand.
 | GET | `/health` | Server status + available agents |
 | GET | `/projects` | List projects |
 | POST | `/projects` | Create project |
-| GET | `/projects/:id/sessions` | List sessions |
-| POST | `/sessions` | Create session |
-| POST | `/sessions/:id/message` | Send message |
-| GET | `/sessions/:id/events` | SSE event stream |
+| GET | `/projects/:projectId` | Get project |
+| DELETE | `/projects/:projectId` | Delete project |
+| GET | `/projects/:projectId/sessions` | List sessions |
+| POST | `/projects/:projectId/sessions` | Create session |
+| GET | `/sessions/:sessionId` | Get session |
+| PATCH | `/sessions/:sessionId` | Update session |
+| DELETE | `/sessions/:sessionId` | Delete session |
+| GET | `/sessions/:sessionId/messages` | List messages |
+| POST | `/sessions/:sessionId/messages` | Send message |
+| DELETE | `/sessions/:sessionId/messages/:messageId` | Delete message |
+| POST | `/sessions/:sessionId/abort` | Abort running session |
+| GET | `/sessions/:sessionId/events` | SSE event stream |
+| GET | `/sessions/:sessionId/export?format=markdown|json` | Export messages |
+| GET | `/sessions/:sessionId/diff` | Git diff for session directory |
 | GET | `/agents` | List available agents |
 | GET | `/agents/:id/models` | List models for agent |
 | GET | `/agents/:id/commands` | List commands for agent |

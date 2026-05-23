@@ -92,7 +92,8 @@ if (Test-Path web) {
 
 Expected: FAIL with `web directory still exists`.
 
-Run the gateway auth UI/settings reference check over `lib/state` and `lib/ui`.
+Search `lib/state` and `lib/ui` for removed gateway credential state,
+controller names, settings keys, and auth-header plumbing.
 
 Expected: FAIL with matches in `settings_store.dart`, `settings_page.dart`, `git_page.dart`, `gateway_chat_page.dart`, `project_list_page.dart`, and `directory_picker.dart`.
 
@@ -337,7 +338,9 @@ Make these edits:
 - Remove the `TextField` whose label is the legacy gateway token setting.
 - Remove `bearerToken` from `_ProfileEditorPage` constructor and usages if it is only passed through from the old settings field.
 
-After editing, the gateway auth UI/settings reference check should print no matches.
+After editing, searching `lib/state` and `lib/ui` for removed gateway credential
+state, controller names, settings keys, and auth-header plumbing should print
+no matches.
 
 - [ ] **Step 8: Run verification for Task 1**
 
@@ -351,7 +354,8 @@ if (Test-Path web) {
 
 Expected: PASS with no output.
 
-Run the gateway auth UI/settings reference check.
+Search `lib/state` and `lib/ui` for removed gateway credential state,
+controller names, settings keys, and auth-header plumbing.
 
 Expected: no matches and exit code 1.
 
@@ -824,8 +828,8 @@ git commit -m "refactor: split gateway agent adapters"
 
 - [ ] **Step 1: Write the failing mojibake check**
 
-Run the documentation encoding check over `README.md`, `TODO.md`, `docs`, and
-`gateway/README.md`.
+Search `README.md`, `TODO.md`, `docs`, and `gateway/README.md` for the known
+garbled UTF-8 fragments recorded in the Task 5 review notes.
 
 Expected: FAIL with matches in existing documentation.
 
@@ -1005,11 +1009,13 @@ Replace the corrupted text with a concise optimization plan:
 
 - [ ] **Step 9: Run documentation verification**
 
-Run the documentation encoding check over the listed files.
+Search the listed documentation files for the known garbled UTF-8 fragments
+recorded in the Task 5 review notes.
 
 Expected: PASS with no output.
 
-Run the stale mobile-target and gateway credential wording check.
+Search `README.md`, `gateway/README.md`, `docs`, and `TODO.md` for stale
+mobile-target run instructions and unsupported gateway credential UI wording.
 
 Expected: no matches, except a permitted sentence that says Web is unsupported without describing Web target files as supported.
 
@@ -1060,7 +1066,8 @@ git status --short
 
 Expected: no uncommitted files after the task commits, or only intentional files awaiting the final integration commit.
 
-Run the gateway auth UI/settings reference check.
+Search `lib/state` and `lib/ui` for removed gateway credential state,
+controller names, settings keys, and auth-header plumbing.
 
 Expected: no matches.
 
@@ -1072,7 +1079,8 @@ if (Test-Path web) {
 
 Expected: PASS with no output.
 
-Run the documentation encoding check over the listed files.
+Search the listed documentation files for the known garbled UTF-8 fragments
+recorded in the Task 5 review notes.
 
 Expected: no matches.
 

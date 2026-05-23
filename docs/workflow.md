@@ -9,16 +9,19 @@ lib/                  Flutter 移动端应用
   state/              Riverpod 状态管理
   ui/                 页面和组件
 gateway/              Node.js 本地网关
-  src/agents/         Codex、Claude Code、OpenCode 适配器
+  src/                HTTP 服务、存储、事件总线、文件和 Git 路由
+  src/agents/         Codex、Claude Code、OpenCode 适配器和共享工具
+  test/               Gateway 单元测试
 docs/                 产品、需求和开发文档
 test/                 Flutter 单元测试
 ```
 
-V1 只支持移动端/iOS。Flutter Web 不是支持目标。
+V1 只支持移动端和 iOS。Flutter Web 不是支持目标，应用依赖移动端能力来处理
+流式输出和附件。
 
-## Node Gateway 本地运行
+## Gateway 本地运行
 
-默认只监听本机：
+默认只监听本机，适合开发和测试：
 
 ```powershell
 cd gateway
@@ -26,20 +29,21 @@ npm install
 npm start
 ```
 
-需要让手机访问电脑上的网关时，可以在可信局域网或 Tailscale 网络中暴露：
+需要让手机访问电脑上的 gateway 时，只在可信局域网或 Tailscale 网络中开放：
 
 ```powershell
+cd gateway
 $env:GATEWAY_HOST='0.0.0.0'
 $env:GATEWAY_PORT='4096'
 npm start
 ```
 
-V1 gateway 无认证，不校验 bearer token。只应在可信局域网或 Tailscale 中暴露，
-不要直接暴露到公网。
+V1 gateway 不实现认证，也不校验访问令牌。不要把它直接暴露到公网；保持
+`127.0.0.1` 用于本机测试，只在手机必须访问电脑时才使用 `0.0.0.0`。
 
 ## Flutter 测试和分析
 
-本机 Flutter 可用时：
+本机安装 Flutter 3.27 或更新版本时：
 
 ```powershell
 flutter pub get
@@ -47,7 +51,7 @@ flutter analyze
 flutter test
 ```
 
-如果本机没有 Flutter SDK，可以使用 Docker：
+如果本机没有 Flutter SDK，可以用 Docker 运行同样的检查：
 
 ```powershell
 docker run --rm `
@@ -81,4 +85,7 @@ npm test --prefix gateway
 
 # 运行 Flutter 测试
 flutter test
+
+# 运行 Flutter 静态分析
+flutter analyze
 ```
