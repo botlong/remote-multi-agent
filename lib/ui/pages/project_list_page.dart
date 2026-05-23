@@ -85,7 +85,6 @@ class _ProjectListPageState extends ConsumerState<ProjectListPage> {
     final directory = await showDirectoryPicker(
       context,
       gatewayBaseUrl: settings.baseUrl,
-      bearerToken: settings.bearerToken,
       initialPath: 'D:\\',
     );
     if (directory == null || !context.mounted) return;

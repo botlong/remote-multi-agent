@@ -6,7 +6,7 @@ This document describes the intended full product scope. Do not treat it as a re
 
 ## Product Goal
 
-Build an iOS client for coding agents that can work with multiple project directories and multiple official agent backends:
+Build a mobile/iOS client for coding agents that can work with multiple project directories and multiple official agent backends:
 
 - OpenCode
 - Claude Code
@@ -18,18 +18,20 @@ The app should feel like one product, but each agent must keep its own official 
 
 The system is split into two separately developed and separately deployed parts:
 
-- iOS app
+- mobile/iOS app
 - Server gateway
 
 The app is closed-source and can be distributed as a paid product.
 
 The gateway can be open-source to increase user trust because it is the only component that talks to local files, project directories, shells, and official agent CLIs.
 
-First gateway version does not need authentication.
-
 ## Security Boundary
 
 The app must not execute code.
+
+The first version intentionally does not implement gateway authentication.
+The supported deployment model is trusted LAN or Tailscale access. The app UI
+must not present a bearer-token field until the gateway validates such tokens.
 
 The app is responsible for:
 
@@ -356,6 +358,8 @@ These are explicit boundaries, not scope reductions:
 - The app must not read local project files directly.
 - The app must not execute shell commands.
 - The app must not hard-code behavior that belongs to a specific official CLI when the gateway can report it dynamically.
+- Flutter Web support for v1.
+- Gateway authentication for v1.
 
 ## Implementation Priority
 
@@ -370,4 +374,3 @@ Keep the full scope, but implement in dependency order:
 7. Claude Code adapter.
 8. Agent-specific command palettes and chat actions.
 9. Advanced permissions, MCP, skills, hooks, plugins, custom commands, and share/export surfaces.
-

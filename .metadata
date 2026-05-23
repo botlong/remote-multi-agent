@@ -21,10 +21,6 @@ migration:
     - platform: ios
       create_revision: 22533d12113808f5d00ec197ca42350b312289b0
       base_revision: 22533d12113808f5d00ec197ca42350b312289b0
-    - platform: web
-      create_revision: 22533d12113808f5d00ec197ca42350b312289b0
-      base_revision: 22533d12113808f5d00ec197ca42350b312289b0
-
   # User provided section
 
   # List of Local paths (relative to this file) that should be

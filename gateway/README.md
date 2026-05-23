@@ -1,7 +1,8 @@
 # Remote Multi Agent Gateway
 
-Local HTTP/SSE gateway for the Flutter client. It owns filesystem access and
-agent execution; the app only talks to this server.
+Local HTTP/SSE gateway for the Flutter mobile client. It owns filesystem
+access, project directories, git operations, credentials, and agent execution;
+the app only talks to this server.
 
 ## Supported Agents
 
@@ -10,11 +11,11 @@ agent execution; the app only talks to this server.
 - OpenCode: `opencode serve` HTTP/SSE proxy, with `opencode run --format json`
   fallback when server mode is unavailable
 
-The gateway holds all API credentials itself, in
-`~/.gateway/profiles.json`. There is no implicit fallback to environment
-variables, CC-Switch, or `~/.claude/settings.json` at agent run time —
-credentials must be **explicitly imported** through the settings UI or the
-`/settings/profiles*` endpoints documented below.
+The gateway holds all API credentials itself in `~/.gateway/profiles.json`.
+There is no implicit fallback to environment variables, CC-Switch, or
+`~/.claude/settings.json` at agent run time; credentials must be explicitly
+imported through the settings UI or the `/settings/profiles*` endpoints
+documented below.
 
 Multiple profiles are supported; exactly one is active at a time.
 
@@ -39,9 +40,10 @@ $env:GATEWAY_PORT='4096'
 npm start
 ```
 
-The first gateway version has no authentication, matching
-`docs/development-spec.md`. Bind to `127.0.0.1` by default, and expose
-`0.0.0.0` only behind a trusted network such as Tailscale.
+The first gateway version has no authentication. This is intentional for v1:
+the gateway is meant to run on the user's machine and be reachable only from a
+trusted LAN or Tailscale network. Keep the default `127.0.0.1` bind for local
+testing. Use `GATEWAY_HOST=0.0.0.0` only when a trusted phone needs LAN access.
 
 ## Configuration
 
@@ -58,12 +60,34 @@ The first gateway version has no authentication, matching
 | `CLAUDE_CODE_PERMISSION_MODE` | Optional Claude permission mode, for example `acceptEdits` or `dontAsk`. |
 | `OPENCODE_BIN` | Override OpenCode executable path. |
 | `OPENCODE_SERVER_URL` | Use an existing OpenCode server instead of starting `opencode serve`. |
-| `OPENCODE_SERVER_PASSWORD` | Password for an existing OpenCode server; sent with OpenCode's Basic auth scheme. Gateway-started OpenCode is local-only and does not set one by default. |
+| `OPENCODE_SERVER_PASSWORD` | Password for an existing OpenCode server, sent with OpenCode's Basic auth scheme. |
 | `OPENCODE_SERVER_HOST` | Host for gateway-started OpenCode server, default `127.0.0.1`. |
 | `OPENCODE_SERVER_PORT` | Port for gateway-started OpenCode server, default is a free port. |
 | `OPENCODE_SERVER_START_TIMEOUT_MS` | Startup wait for `opencode serve`, default `45000`. |
 | `OPENCODE_DEFAULT_MODEL` | Fallback model id when the app did not choose one, default `opencode/big-pickle`. |
 | `OPENCODE_MODE` | OpenCode message mode, default `build`. |
+
+## Agent Adapter Layout
+
+Gateway agent adapters are split by agent:
+
+```text
+gateway/src/agents/
+  index.js
+  registry.js
+  claude_code.js
+  codex.js
+  opencode.js
+  command_helpers.js
+  json_cli.js
+  model_cache.js
+  opencode_helpers.js
+```
+
+Shared helpers live under `gateway/src/agents/`: they handle command metadata
+and discovery, JSON CLI parsing, model caching, and OpenCode event/model
+normalization. The registry exposes the normalized metadata, model lists,
+command lists, and message execution contract used by the app.
 
 For OpenCode, the gateway creates a native OpenCode session through
 `POST /session?directory=...`, stores that id as `agentSessionId`, sends turns
@@ -112,21 +136,16 @@ GET  /settings/credential-sources/official
 GET  /settings/credential-sources/cc-switch
 ```
 
-- **`/settings/profiles`** — CRUD over the gateway-owned credential store.
-  Keys are returned masked.
-- **`/settings/credential-sources/official`** — preview entries discoverable
-  in known per-provider config files. Currently:
-  - Claude: `~/.claude/settings.json` (`provider: "anthropic"`)
-  - Codex: `~/.codex/auth.json` (`provider: "openai"`)
-- **`/settings/credential-sources/cc-switch`** — preview entries discoverable
-  in `~/.cc-switch/cc-switch.db`. Lists **every** supported provider regardless
-  of `app_type` (`claude` → `anthropic`, `codex` → `openai`); the active
-  provider per `app_type` is flagged via `isCurrent: true`. Returns `[]` if
-  `node:sqlite` is unavailable (Node < 22).
-- **`/settings/profiles/import`** — body
-  `{ name, source, sourceId?, makeActive? }` where `source` is `"official"` or
-  `"cc-switch"`. Creates a profile populated with the discovered credential
-  under the entry's declared `provider` slot.
+- `/settings/profiles`: CRUD over the gateway-owned credential store. Keys are
+  returned masked.
+- `/settings/credential-sources/official`: preview entries discoverable in
+  known per-provider config files. Currently Claude uses
+  `~/.claude/settings.json` and Codex uses `~/.codex/auth.json`.
+- `/settings/credential-sources/cc-switch`: preview entries discoverable in
+  `~/.cc-switch/cc-switch.db`. Returns `[]` if `node:sqlite` is unavailable.
+- `/settings/profiles/import`: body
+  `{ name, source, sourceId?, makeActive? }`, where `source` is `"official"` or
+  `"cc-switch"`.
 
 `/sessions/:sessionId/events` is SSE. Each event uses the normalized envelope:
 

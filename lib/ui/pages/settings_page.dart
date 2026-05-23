@@ -52,7 +52,6 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   late final TextEditingController _baseUrlCtrl;
-  late final TextEditingController _tokenCtrl;
   String _providerId = '';
   String _modelId = '';
   List<ModelChoice> _models = const [];
@@ -72,7 +71,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     super.initState();
     final s = ref.read(settingsControllerProvider);
     _baseUrlCtrl = TextEditingController(text: s.baseUrl);
-    _tokenCtrl = TextEditingController(text: s.bearerToken);
     _providerId = s.providerId;
     _modelId = s.modelId;
     // Auto-test if URL is already configured.
@@ -87,7 +85,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   void dispose() {
     _baseUrlCtrl.dispose();
-    _tokenCtrl.dispose();
     super.dispose();
   }
 
@@ -98,7 +95,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       final client = GatewayClient(
         baseUrl: Uri.parse(url),
-        bearerToken: _tokenCtrl.text.trim(),
       );
       final profiles = await client.listProfiles();
       final active = await client.getActiveProfile();
@@ -121,7 +117,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       final client = GatewayClient(
         baseUrl: Uri.parse(url),
-        bearerToken: _tokenCtrl.text.trim(),
       );
       await client.activateProfile(profileId);
       client.close();
@@ -158,7 +153,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       final client = GatewayClient(
         baseUrl: Uri.parse(url),
-        bearerToken: _tokenCtrl.text.trim(),
       );
       await client.deleteProfile(profileId);
       client.close();
@@ -177,7 +171,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       MaterialPageRoute<bool>(
         builder: (_) => _ProfileEditorPage(
           baseUrl: _baseUrlCtrl.text.trim(),
-          bearerToken: _tokenCtrl.text.trim(),
           existing: existing,
         ),
       ),
@@ -279,7 +272,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (url.isEmpty) return;
     final client = GatewayClient(
       baseUrl: Uri.parse(url),
-      bearerToken: _tokenCtrl.text.trim(),
     );
     List<Map<String, dynamic>> entries;
     try {
@@ -531,7 +523,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       final client = GatewayClient(
         baseUrl: Uri.parse(url),
-        bearerToken: _tokenCtrl.text.trim(),
       );
       final ok = await client.health();
       if (!ok) {
@@ -597,7 +588,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await controller.update(
       AppSettings(
         baseUrl: _baseUrlCtrl.text.trim(),
-        bearerToken: _tokenCtrl.text.trim(),
         providerId: _providerId,
         modelId: _modelId,
         themeMode: current.themeMode,
@@ -758,16 +748,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             keyboardType: TextInputType.url,
             autocorrect: false,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _tokenCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Bearer token (optional)',
-              prefixIcon: Icon(Icons.vpn_key_outlined),
-            ),
-            autocorrect: false,
-            obscureText: true,
           ),
           const SizedBox(height: 14),
           Row(
@@ -1210,12 +1190,10 @@ class _ProfileTile extends StatelessWidget {
 class _ProfileEditorPage extends StatefulWidget {
   const _ProfileEditorPage({
     required this.baseUrl,
-    required this.bearerToken,
     this.existing,
   });
 
   final String baseUrl;
-  final String bearerToken;
   final Map<String, dynamic>? existing;
 
   @override
@@ -1329,7 +1307,6 @@ class _ProfileEditorPageState extends State<_ProfileEditorPage> {
     try {
       final client = GatewayClient(
         baseUrl: Uri.parse(widget.baseUrl),
-        bearerToken: widget.bearerToken,
       );
       final keys = _buildKeys();
       if (_isEditing) {

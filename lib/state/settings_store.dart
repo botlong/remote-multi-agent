@@ -1,8 +1,6 @@
-/// Persistent connection settings (server URL, bearer token, default model).
+/// Persistent connection settings for the trusted LAN gateway.
 ///
 /// Stored in SharedPreferences so the app remembers them across launches.
-/// We avoid a heavier secure-storage dep on purpose — the server runs on the
-/// user's own LAN/Tailscale, and the bearer token is just OPENCODE_SERVER_PASSWORD.
 library;
 
 import 'package:flutter/material.dart';
@@ -13,7 +11,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AppSettings {
   const AppSettings({
     required this.baseUrl,
-    required this.bearerToken,
     required this.providerId,
     required this.modelId,
     this.themeMode = ThemeMode.system,
@@ -24,7 +21,6 @@ class AppSettings {
   });
 
   final String baseUrl;
-  final String bearerToken;
   final String providerId;
   final String modelId;
   final ThemeMode themeMode;
@@ -40,7 +36,6 @@ class AppSettings {
 
   AppSettings copyWith({
     String? baseUrl,
-    String? bearerToken,
     String? providerId,
     String? modelId,
     ThemeMode? themeMode,
@@ -51,7 +46,6 @@ class AppSettings {
   }) =>
       AppSettings(
         baseUrl: baseUrl ?? this.baseUrl,
-        bearerToken: bearerToken ?? this.bearerToken,
         providerId: providerId ?? this.providerId,
         modelId: modelId ?? this.modelId,
         themeMode: themeMode ?? this.themeMode,
@@ -63,14 +57,15 @@ class AppSettings {
 
   static const empty = AppSettings(
     baseUrl: 'http://127.0.0.1:4096',
-    bearerToken: '',
     providerId: 'opencode',
     modelId: 'big-pickle',
   );
 }
 
 class SettingsController extends StateNotifier<AppSettings> {
-  SettingsController(this._prefs) : super(_load(_prefs));
+  SettingsController(this._prefs) : super(_load(_prefs)) {
+    _prefs.remove(_kLegacyToken);
+  }
 
   final SharedPreferences _prefs;
 
@@ -78,7 +73,6 @@ class SettingsController extends StateNotifier<AppSettings> {
     final themeModeIndex = p.getInt(_kThemeMode);
     return AppSettings(
       baseUrl: p.getString(_kBaseUrl) ?? AppSettings.empty.baseUrl,
-      bearerToken: p.getString(_kToken) ?? '',
       providerId: p.getString(_kProvider) ?? AppSettings.empty.providerId,
       modelId: p.getString(_kModel) ?? AppSettings.empty.modelId,
       themeMode: themeModeIndex != null && themeModeIndex < ThemeMode.values.length
@@ -95,7 +89,6 @@ class SettingsController extends StateNotifier<AppSettings> {
     state = next;
     await Future.wait([
       _prefs.setString(_kBaseUrl, next.baseUrl),
-      _prefs.setString(_kToken, next.bearerToken),
       _prefs.setString(_kProvider, next.providerId),
       _prefs.setString(_kModel, next.modelId),
       _prefs.setInt(_kThemeMode, next.themeMode.index),
@@ -132,7 +125,7 @@ class SettingsController extends StateNotifier<AppSettings> {
   }
 
   static const _kBaseUrl = 'oc.baseUrl';
-  static const _kToken = 'oc.bearerToken';
+  static const _kLegacyToken = 'oc.bearerToken';
   static const _kProvider = 'oc.providerId';
   static const _kModel = 'oc.modelId';
   static const _kThemeMode = 'oc.themeMode';

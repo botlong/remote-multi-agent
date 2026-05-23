@@ -18,10 +18,7 @@ import '../../state/settings_store.dart';
 
 final gitClientProvider = Provider<GitClient>((ref) {
   final s = ref.watch(settingsControllerProvider);
-  final client = GitClient(
-    baseUrl: Uri.parse(s.baseUrl),
-    bearerToken: s.bearerToken,
-  );
+  final client = GitClient(baseUrl: Uri.parse(s.baseUrl));
   ref.onDispose(client.close);
   return client;
 });
