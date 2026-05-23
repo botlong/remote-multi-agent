@@ -92,12 +92,7 @@ if (Test-Path web) {
 
 Expected: FAIL with `web directory still exists`.
 
-```powershell
-$matches = rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
-if ($LASTEXITCODE -eq 0) {
-  throw "gateway auth UI/settings references still exist`n$matches"
-}
-```
+Run the gateway auth UI/settings reference check over `lib/state` and `lib/ui`.
 
 Expected: FAIL with matches in `settings_store.dart`, `settings_page.dart`, `git_page.dart`, `gateway_chat_page.dart`, `project_list_page.dart`, and `directory_picker.dart`.
 
@@ -342,11 +337,7 @@ Make these edits:
 - Remove the `TextField` whose label is the legacy gateway token setting.
 - Remove `bearerToken` from `_ProfileEditorPage` constructor and usages if it is only passed through from the old settings field.
 
-After editing, this command should print no matches:
-
-```powershell
-rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
-```
+After editing, the gateway auth UI/settings reference check should print no matches.
 
 - [ ] **Step 8: Run verification for Task 1**
 
@@ -360,11 +351,7 @@ if (Test-Path web) {
 
 Expected: PASS with no output.
 
-Run:
-
-```powershell
-rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
-```
+Run the gateway auth UI/settings reference check.
 
 Expected: no matches and exit code 1.
 
@@ -837,14 +824,8 @@ git commit -m "refactor: split gateway agent adapters"
 
 - [ ] **Step 1: Write the failing mojibake check**
 
-Run:
-
-```powershell
-$matches = rg -n "encoding check pattern" README.md TODO.md docs gateway/README.md
-if ($LASTEXITCODE -eq 0) {
-  throw "encoding issues remain`n$matches"
-}
-```
+Run the documentation encoding check over `README.md`, `TODO.md`, `docs`, and
+`gateway/README.md`.
 
 Expected: FAIL with matches in existing documentation.
 
@@ -854,7 +835,7 @@ Make these concrete content changes:
 
 - Replace the architecture diagram with an ASCII-only diagram.
 - Replace "Phone (Flutter app) HTTPS / SSE" with "iPhone / mobile Flutter app HTTP(S) / SSE".
-- Remove the obsolete mobile-target command text.
+- Remove stale mobile-target run instructions.
 - Add this v1 access note:
 
 ```markdown
@@ -865,8 +846,8 @@ LAN or Tailscale network only. The default bind host is `127.0.0.1`; use
 `GATEWAY_HOST=0.0.0.0` only when the phone must reach the laptop over a trusted
 network.
 
-Web is not a supported target in v1. The Flutter Web scaffold has been removed,
-and the app uses native/mobile-only APIs for streaming and attachments.
+Web is not a supported target in v1. Web target files have been removed, and
+the app uses native/mobile-only APIs for streaming and attachments.
 ```
 
 Replace the Flutter development section with:
@@ -1024,22 +1005,13 @@ Replace the corrupted text with a concise optimization plan:
 
 - [ ] **Step 9: Run documentation verification**
 
-```powershell
-$matches = rg -n "encoding check pattern" README.md TODO.md docs gateway/README.md
-if ($LASTEXITCODE -eq 0) {
-  throw "encoding issues remain`n$matches"
-}
-```
+Run the documentation encoding check over the listed files.
 
 Expected: PASS with no output.
 
-Run:
+Run the stale mobile-target and gateway credential wording check.
 
-```powershell
-rg -n "obsolete mobile-target command text|Flutter Web|web scaffold|legacy gateway credential-setting wording" README.md gateway/README.md docs TODO.md
-```
-
-Expected: no matches, except a permitted sentence that says Web is unsupported without naming a Web scaffold.
+Expected: no matches, except a permitted sentence that says Web is unsupported without describing Web target files as supported.
 
 - [ ] **Step 10: Commit documentation updates**
 
@@ -1088,9 +1060,7 @@ git status --short
 
 Expected: no uncommitted files after the task commits, or only intentional files awaiting the final integration commit.
 
-```powershell
-rg -n "_tokenCtrl|legacy gateway credential-setting wording|settings\.bearerToken|bearerToken:" lib/state lib/ui
-```
+Run the gateway auth UI/settings reference check.
 
 Expected: no matches.
 
@@ -1102,9 +1072,7 @@ if (Test-Path web) {
 
 Expected: PASS with no output.
 
-```powershell
-rg -n "encoding check pattern" README.md TODO.md docs gateway/README.md
-```
+Run the documentation encoding check over the listed files.
 
 Expected: no matches.
 
