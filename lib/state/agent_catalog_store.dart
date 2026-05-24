@@ -99,8 +99,8 @@ class AgentCatalogStore extends StateNotifier<AgentCatalogState> {
     );
   }
 
-  Future<List<AgentModel>> modelsFor(String agentId) =>
-      _client.listAgentModels(agentId);
+  Future<List<AgentModel>> modelsFor(String agentId, {String? profileId}) =>
+      _client.listAgentModels(agentId, profileId: profileId);
 
   Future<List<AgentCommand>> commandsFor(String agentId) =>
       _client.listAgentCommands(agentId);

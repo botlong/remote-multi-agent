@@ -61,11 +61,12 @@ class ClaudeCodeAdapter {
     };
   }
 
-  models() {
-    return cachedModels("claude-code", () => this._fetchModels());
+  models(options = {}) {
+    const profileId = options.profileId || 'none';
+    return cachedModels(`claude-code:${profileId}`, () => this._fetchModels(options));
   }
 
-  async _fetchModels() {
+  async _fetchModels(options = {}) {
     const envModels = (process.env.CLAUDE_CODE_MODELS || '')
       .split(',')
       .map((value) => value.trim())
@@ -74,7 +75,7 @@ class ClaudeCodeAdapter {
       return envModels.map((id) => ({ id, displayName: id, raw: { id } }));
     }
 
-    const profileKey = this.profileStore?.getKeyForProvider('anthropic');
+    const profileKey = this.profileStore?.getKeyForProviderById(options.profileId, 'anthropic');
     const apiKey = profileKey?.key || null;
     const baseUrl = profileKey?.baseUrl || null;
     if (apiKey) {

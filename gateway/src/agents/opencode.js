@@ -82,8 +82,9 @@ class OpenCodeAdapter {
     };
   }
 
-  models() {
-    return cachedModels("opencode", () => this._fetchModels());
+  models(options = {}) {
+    const profileId = options.profileId || 'none';
+    return cachedModels(`opencode:${profileId}`, () => this._fetchModels(options));
   }
 
   async _fetchModels() {
@@ -286,6 +287,11 @@ class OpenCodeAdapter {
     if (openaiKey?.key) {
       extraEnv.OPENAI_API_KEY = openaiKey.key;
       if (openaiKey.baseUrl) extraEnv.OPENAI_BASE_URL = openaiKey.baseUrl;
+    }
+    const opencodeKey = this.profileStore?.getKeyForProviderById(profileId, 'opencode');
+    if (opencodeKey?.key && !extraEnv.OPENAI_API_KEY) {
+      extraEnv.OPENAI_API_KEY = opencodeKey.key;
+      if (opencodeKey.baseUrl) extraEnv.OPENAI_BASE_URL = opencodeKey.baseUrl;
     }
     const googleKey = this.profileStore?.getKeyForProviderById(profileId, 'google');
     if (googleKey?.key) {

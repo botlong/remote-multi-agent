@@ -76,11 +76,39 @@ class CodexAdapter {
     };
   }
 
-  models() {
-    return cachedModels('codex', () => this._fetchModels());
+  models(options = {}) {
+    const profileId = options.profileId || 'none';
+    return cachedModels(`codex:${profileId}`, () => this._fetchModels(options));
   }
 
-  async _fetchModels() {
+  async _fetchModels(options = {}) {
+    const profileKey = this.profileStore?.getKeyForProviderById(
+      options.profileId, 'openai');
+    if (profileKey?.key) {
+      try {
+        const res = await fetch(openAIModelsUrl(profileKey.baseUrl), {
+          headers: {
+            authorization: `Bearer ${profileKey.key}`,
+            accept: 'application/json',
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.ok) {
+          const body = await res.json();
+          const models = readOpenAIModels(body)
+            .filter((model) => model.id)
+            .map((model) => ({
+              id: model.id,
+              displayName: model.display_name || model.name || model.id,
+              raw: model,
+            }));
+          if (models.length > 0) return models;
+        }
+      } catch (err) {
+        console.warn(`[codex] Failed to fetch models from OpenAI profile: ${err.message}`);
+      }
+    }
+
     const result = await runCapture(this.command, ['debug', 'models', '--bundled']);
     if (result.exitCode === 0) {
       try {
@@ -168,6 +196,18 @@ function compactCodexModel(model) {
     additionalSpeedTiers: model.additional_speed_tiers,
     serviceTiers: model.service_tiers,
   };
+}
+
+function openAIModelsUrl(baseUrl) {
+  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  return `${root}/models`;
+}
+
+function readOpenAIModels(body) {
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.data)) return body.data;
+  if (Array.isArray(body?.models)) return body.models;
+  return [];
 }
 
 module.exports = {

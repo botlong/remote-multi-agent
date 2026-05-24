@@ -50,12 +50,12 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
           _modelsFuture = _loadModels(match.id);
         }
       }
-      if (_selectedAgent != null &&
-          _selectedModel == null &&
-          settings.lastModelId.isNotEmpty) {
-        // Model will be resolved once _modelsFuture completes; store the
-        // preferred ID so we can pick it from the list.
-        _preferredModelId = settings.lastModelId;
+      if (_selectedAgent != null && _selectedModel == null) {
+        // Default model is an explicit per-agent choice. Last-used is only a
+        // fallback for quick restore when no default exists.
+        _preferredModelId =
+            settings.defaultModelByAgent[_selectedAgent!.id] ??
+                (settings.lastModelId.isNotEmpty ? settings.lastModelId : null);
       }
     }
 
@@ -97,6 +97,9 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
                   _selectedAgent = agent;
                   _selectedModel = null;
                   _modelLookupComplete = false;
+                  _preferredModelId =
+                      ref.read(settingsControllerProvider).defaultModelByAgent[
+                          agent.id];
                   _modelsFuture = _loadModels(agent.id);
                   _selectedPermission = _defaultPermission(agent.id);
                 }),
@@ -186,8 +189,10 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
 
   Future<List<GatewayModelView>> _loadModels(String agentId) async {
     final notifier = ref.read(agentCatalogProvider.notifier);
+    final profileId =
+        ref.read(settingsControllerProvider).selectedProfileByAgent[agentId];
     try {
-      final models = await notifier.modelsFor(agentId);
+      final models = await notifier.modelsFor(agentId, profileId: profileId);
       return models
           .map(
             (model) => GatewayModelView(
@@ -225,6 +230,8 @@ class _AgentGroupPageState extends ConsumerState<AgentGroupPage> {
         modelId: _selectedModel?.id,
         sandbox: isCodex ? _selectedPermission : null,
         permissionMode: !isCodex ? _selectedPermission : null,
+        profileId:
+            ref.read(settingsControllerProvider).selectedProfileByAgent[agent.id],
       );
       if (!mounted) return;
       final session = readSession(created);

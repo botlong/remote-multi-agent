@@ -114,11 +114,39 @@ class GatewayClient {
     return Agent.fromJson(res.data ?? const <String, dynamic>{});
   }
 
-  Future<List<AgentModel>> listAgentModels(String agentId) async {
-    final res = await _dio.get<dynamic>('/agents/${_path(agentId)}/models');
+  Future<List<AgentModel>> listAgentModels(
+    String agentId, {
+    String? profileId,
+  }) async {
+    final res = await _dio.get<dynamic>(
+      '/agents/${_path(agentId)}/models',
+      queryParameters: <String, dynamic>{
+        if (profileId != null && profileId.isNotEmpty) 'profileId': profileId,
+      },
+    );
     return _readEnvelopeList(res.data, 'models')
         .map(AgentModel.fromJson)
         .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> listAgentSettings() async {
+    final res = await _dio.get<dynamic>('/settings/agents');
+    return _readEnvelopeList(res.data, 'agents');
+  }
+
+  Future<Map<String, dynamic>> updateAgentSettings(
+    String agentId, {
+    String? profileId,
+    String? defaultModel,
+  }) async {
+    final res = await _dio.patch<Map<String, dynamic>>(
+      '/settings/agents/${_path(agentId)}',
+      data: <String, Object?>{
+        if (profileId != null) 'profileId': profileId,
+        if (defaultModel != null) 'defaultModel': defaultModel,
+      },
+    );
+    return res.data ?? const <String, dynamic>{};
   }
 
   Future<List<AgentCommand>> listAgentCommands(String agentId) async {
@@ -144,6 +172,7 @@ class GatewayClient {
     String? title,
     String? sandbox,
     String? permissionMode,
+    String? profileId,
   }) async {
     final res = await _dio.post<Map<String, dynamic>>(
       '/projects/${_path(projectId)}/sessions',
@@ -154,6 +183,7 @@ class GatewayClient {
         if (sandbox != null && sandbox.isNotEmpty) 'sandbox': sandbox,
         if (permissionMode != null && permissionMode.isNotEmpty)
           'permissionMode': permissionMode,
+        if (profileId != null && profileId.isNotEmpty) 'profileId': profileId,
       },
     );
     return GatewaySession.fromJson(res.data ?? const <String, dynamic>{});
