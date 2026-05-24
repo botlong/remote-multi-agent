@@ -8,6 +8,7 @@ import 'package:remote_multi_agent/state/gateway_client_provider.dart';
 import 'package:remote_multi_agent/state/settings_store.dart';
 import 'package:remote_multi_agent/ui/pages/gateway_chat_page.dart';
 import 'package:remote_multi_agent/ui/pages/gateway_ui_adapters.dart';
+import 'package:remote_multi_agent/ui/widgets/agent_activity_bar.dart';
 import 'package:remote_multi_agent/ui/widgets/activity_timeline.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -113,6 +114,99 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ActivityTimeline), findsNothing);
+  });
+
+  testWidgets('does not render a transient active tool bar above input',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final client = _FakeGatewayClient(
+      eventsStream: Stream<GatewayEvent>.fromIterable([
+        const GatewayEvent(
+          type: 'activity.updated',
+          sessionId: 's1',
+          agentId: 'codex',
+          timestampMs: 3,
+          data: <String, dynamic>{
+            'activity': <String, dynamic>{
+              'id': 'tool_1',
+              'kind': 'command',
+              'status': 'running',
+              'title': 'Running npm test',
+              'command': 'npm test',
+              'sequence': 1,
+            },
+          },
+          raw: <String, dynamic>{},
+          sseEvent: 'message',
+        ),
+      ]),
+      messages: const [
+        <String, dynamic>{
+          'id': 'm1',
+          'sessionID': 's1',
+          'role': 'assistant',
+          'status': 'running',
+          'time': <String, dynamic>{'created': 1},
+          'parts': [
+            <String, dynamic>{
+              'id': 'm1_tool_tool_1',
+              'messageID': 'm1',
+              'sessionID': 's1',
+              'type': 'tool',
+              'tool': 'shell',
+              'status': 'running',
+              'input': <String, dynamic>{'command': 'npm test'},
+            },
+          ],
+        },
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          gatewayClientProvider.overrideWithValue(client),
+          settingsControllerProvider.overrideWith(
+            (ref) => SettingsController(prefs),
+          ),
+          sharedPreferencesProvider.overrideWith((ref) async => prefs),
+        ],
+        child: const MaterialApp(
+          home: GatewayChatPage(
+            session: GatewaySessionView(
+              id: 's1',
+              projectId: 'p1',
+              directory: '/tmp/project',
+              agentId: 'codex',
+              modelId: 'gpt-5.5',
+              title: 'Codex session',
+              status: 'running',
+              createdAtMs: 1,
+              updatedAtMs: 2,
+            ),
+            project: GatewayProjectView(
+              id: 'p1',
+              name: 'project',
+              directory: '/tmp/project',
+              updatedAtMs: 2,
+            ),
+            agent: GatewayAgentView(
+              id: 'codex',
+              displayName: 'Codex',
+              supportsModels: true,
+              supportsSlashCommands: true,
+              commands: [],
+              models: [],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(AgentActivityBar), findsNothing);
   });
 }
 
