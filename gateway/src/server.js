@@ -99,6 +99,7 @@ async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
           url,
           store,
           registry,
+          profileStore,
         });
       }
 
@@ -179,6 +180,7 @@ async function createGatewayServer({ dataFile, adapters, profilesFile } = {}) {
           response,
           segments,
           profileStore,
+          registry,
         });
       }
 
@@ -238,13 +240,20 @@ async function handleProjects({ request, response, segments, store, registry, pr
       const body = await readJson(request);
       const adapter = registry.get(body.agentId);
       if (!adapter) throw httpError(400, `unknown agent: ${body.agentId}`);
+      const agentSettings = profileStore.getAgentSettings(body.agentId);
+      const profileId = body.profileId || agentSettings.profileId;
+      if (profileId && !profileStore.get(profileId)) {
+        throw httpError(404, 'profile not found');
+      }
+      const modelId = body.modelId || agentSettings.defaultModel || null;
       let nativeSession = null;
       if (adapter.createSession) {
         try {
           nativeSession = await adapter.createSession({
             project,
-            modelId: body.modelId,
+            modelId,
             title: body.title || `${adapter.displayName} session`,
+            profileId,
           });
         } catch (_) {
           nativeSession = null;
@@ -253,12 +262,11 @@ async function handleProjects({ request, response, segments, store, registry, pr
       const rawExtra = {};
       if (body.sandbox) rawExtra.sandbox = body.sandbox;
       if (body.permissionMode) rawExtra.permissionMode = body.permissionMode;
-      const activeProfile = profileStore.getActive();
-      if (activeProfile) rawExtra.profileId = activeProfile.id;
+      if (profileId) rawExtra.profileId = profileId;
       const session = await store.createSession({
         project,
         agentId: body.agentId,
-        modelId: body.modelId,
+        modelId,
         title: body.title || nativeSession?.title || `${adapter.displayName} session`,
         agentSessionId: nativeSession?.agentSessionId,
         raw: { ...(nativeSession ? { agentSession: nativeSession.raw } : {}), ...rawExtra },
@@ -269,7 +277,7 @@ async function handleProjects({ request, response, segments, store, registry, pr
   throw httpError(404, 'not found');
 }
 
-async function handleAgents({ request, response, segments, url, store, registry }) {
+async function handleAgents({ request, response, segments, url, store, registry, profileStore }) {
   if (segments.length === 1 && request.method === 'GET') {
     return sendJson(response, await registry.list());
   }
@@ -279,7 +287,10 @@ async function handleAgents({ request, response, segments, url, store, registry 
     return sendJson(response, await adapter.metadata());
   }
   if (segments.length === 3 && segments[2] === 'models' && request.method === 'GET') {
-    return sendJson(response, { models: await adapter.models() });
+    const requestedProfileId = url.searchParams.get('profileId');
+    const profileId = requestedProfileId || profileStore.getAgentProfileId(segments[1]);
+    if (profileId && !profileStore.get(profileId)) throw httpError(404, 'profile not found');
+    return sendJson(response, { models: await adapter.models({ profileId }) });
   }
   if (segments.length === 3 && segments[2] === 'commands' && request.method === 'GET') {
     const projectId = url.searchParams.get('projectId');
@@ -293,7 +304,7 @@ async function handleAgents({ request, response, segments, url, store, registry 
   throw httpError(404, 'not found');
 }
 
-async function handleSettings({ request, response, segments, profileStore }) {
+async function handleSettings({ request, response, segments, profileStore, registry }) {
   // GET /settings/active-profile
   if (segments.length === 2 && segments[1] === 'active-profile' && request.method === 'GET') {
     const active = profileStore.getActive();
@@ -375,7 +386,36 @@ async function handleSettings({ request, response, segments, profileStore }) {
     }
   }
 
+  // /settings/agents routes
+  if (segments.length >= 2 && segments[1] === 'agents') {
+    if (segments.length === 2 && request.method === 'GET') {
+      const agents = (await registry.list()).map((agent) => agent.id);
+      return sendJson(response, {
+        agents: profileStore
+          .listAgentSettings(agents)
+          .map((setting) => formatAgentSetting(profileStore, setting)),
+        profiles: profileStore.list(),
+      });
+    }
+    if (segments.length === 3 && request.method === 'PATCH') {
+      const agentId = segments[2];
+      if (!registry.get(agentId)) throw httpError(404, 'agent not found');
+      const updated = await profileStore.updateAgentSettings(agentId, await readJson(request));
+      return sendJson(response, formatAgentSetting(profileStore, { agentId, ...updated }));
+    }
+  }
+
   throw httpError(404, 'not found');
+}
+
+function formatAgentSetting(profileStore, setting) {
+  const profile = setting.profileId ? profileStore.get(setting.profileId) : null;
+  return {
+    agentId: setting.agentId,
+    profileId: setting.profileId || null,
+    profile: profile ? maskProfile(profile) : null,
+    defaultModel: setting.defaultModel || null,
+  };
 }
 
 async function handleSessions({

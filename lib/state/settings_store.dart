@@ -3,6 +3,8 @@
 /// Stored in SharedPreferences so the app remembers them across launches.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +20,8 @@ class AppSettings {
     this.lastModelId = '',
     this.lastSessionId = '',
     this.lastProjectId = '',
+    this.selectedProfileByAgent = const <String, String>{},
+    this.defaultModelByAgent = const <String, String>{},
   });
 
   final String baseUrl;
@@ -31,8 +35,11 @@ class AppSettings {
   final String lastSessionId;
   final String lastProjectId;
 
-  bool get isConfigured =>
-      baseUrl.isNotEmpty && providerId.isNotEmpty && modelId.isNotEmpty;
+  /// Agent-scoped defaults. Profiles and models are no longer global settings.
+  final Map<String, String> selectedProfileByAgent;
+  final Map<String, String> defaultModelByAgent;
+
+  bool get isConfigured => baseUrl.isNotEmpty;
 
   AppSettings copyWith({
     String? baseUrl,
@@ -43,6 +50,8 @@ class AppSettings {
     String? lastModelId,
     String? lastSessionId,
     String? lastProjectId,
+    Map<String, String>? selectedProfileByAgent,
+    Map<String, String>? defaultModelByAgent,
   }) =>
       AppSettings(
         baseUrl: baseUrl ?? this.baseUrl,
@@ -53,6 +62,9 @@ class AppSettings {
         lastModelId: lastModelId ?? this.lastModelId,
         lastSessionId: lastSessionId ?? this.lastSessionId,
         lastProjectId: lastProjectId ?? this.lastProjectId,
+        selectedProfileByAgent:
+            selectedProfileByAgent ?? this.selectedProfileByAgent,
+        defaultModelByAgent: defaultModelByAgent ?? this.defaultModelByAgent,
       );
 
   static const empty = AppSettings(
@@ -82,6 +94,8 @@ class SettingsController extends StateNotifier<AppSettings> {
       lastModelId: p.getString(_kLastModel) ?? '',
       lastSessionId: p.getString(_kLastSession) ?? '',
       lastProjectId: p.getString(_kLastProject) ?? '',
+      selectedProfileByAgent: _readStringMap(p.getString(_kProfilesByAgent)),
+      defaultModelByAgent: _readStringMap(p.getString(_kModelsByAgent)),
     );
   }
 
@@ -96,6 +110,11 @@ class SettingsController extends StateNotifier<AppSettings> {
       _prefs.setString(_kLastModel, next.lastModelId),
       _prefs.setString(_kLastSession, next.lastSessionId),
       _prefs.setString(_kLastProject, next.lastProjectId),
+      _prefs.setString(
+        _kProfilesByAgent,
+        jsonEncode(next.selectedProfileByAgent),
+      ),
+      _prefs.setString(_kModelsByAgent, jsonEncode(next.defaultModelByAgent)),
     ]);
   }
 
@@ -124,6 +143,39 @@ class SettingsController extends StateNotifier<AppSettings> {
     await Future.wait(futures);
   }
 
+  Future<void> setSelectedProfileForAgent(String agentId, String profileId) {
+    final next = Map<String, String>.from(state.selectedProfileByAgent);
+    if (profileId.isEmpty) {
+      next.remove(agentId);
+    } else {
+      next[agentId] = profileId;
+    }
+    return update(state.copyWith(selectedProfileByAgent: next));
+  }
+
+  Future<void> setDefaultModelForAgent(String agentId, String modelId) {
+    final next = Map<String, String>.from(state.defaultModelByAgent);
+    if (modelId.isEmpty) {
+      next.remove(agentId);
+    } else {
+      next[agentId] = modelId;
+    }
+    return update(state.copyWith(defaultModelByAgent: next));
+  }
+
+  static Map<String, String> _readStringMap(String? raw) {
+    if (raw == null || raw.isEmpty) return const <String, String>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String, String>{};
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
+    } catch (_) {
+      return const <String, String>{};
+    }
+  }
+
   static const _kBaseUrl = 'oc.baseUrl';
   static const _kLegacyToken = 'oc.bearerToken';
   static const _kProvider = 'oc.providerId';
@@ -133,6 +185,8 @@ class SettingsController extends StateNotifier<AppSettings> {
   static const _kLastModel = 'oc.lastModelId';
   static const _kLastSession = 'oc.lastSessionId';
   static const _kLastProject = 'oc.lastProjectId';
+  static const _kProfilesByAgent = 'oc.selectedProfileByAgent';
+  static const _kModelsByAgent = 'oc.defaultModelByAgent';
 }
 
 /// Top-level provider. The async dependency is solved with [FutureProvider],

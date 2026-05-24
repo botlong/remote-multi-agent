@@ -40,6 +40,7 @@ class ProfileStore {
   constructor(file) {
     this.file = file || DEFAULT_PROFILES_PATH;
     this.profiles = [];
+    this.agentSettings = { agents: {} };
     this.saveQueue = Promise.resolve();
   }
 
@@ -52,13 +53,24 @@ class ProfileStore {
     try {
       const raw = await fs.readFile(this.file, 'utf8');
       const parsed = JSON.parse(raw);
-      this.profiles = Array.isArray(parsed) ? parsed : [];
+      if (Array.isArray(parsed)) {
+        this.profiles = parsed;
+        this.agentSettings = { agents: {} };
+      } else if (parsed && typeof parsed === 'object') {
+        this.profiles = Array.isArray(parsed.profiles) ? parsed.profiles : [];
+        this.agentSettings = normalizeAgentSettings(parsed.agentSettings);
+      } else {
+        this.profiles = [];
+        this.agentSettings = { agents: {} };
+      }
     } catch (error) {
       if (error.code === 'ENOENT') {
         this.profiles = [];
+        this.agentSettings = { agents: {} };
         await this.save();
       } else if (error instanceof SyntaxError) {
         this.profiles = [];
+        this.agentSettings = { agents: {} };
         await this.save();
       } else {
         throw error;
@@ -99,7 +111,7 @@ class ProfileStore {
    * Create a new profile. If it's the first profile, it becomes active
    * automatically.
    */
-  async create({ name, keys, defaultModel }) {
+  async create({ name, keys }) {
     if (!name || typeof name !== 'string') {
       throw Object.assign(new Error('Profile name is required'), { statusCode: 400 });
     }
@@ -110,7 +122,6 @@ class ProfileStore {
       name,
       isCurrent: isFirst,
       keys: keys && typeof keys === 'object' ? keys : {},
-      defaultModel: defaultModel && typeof defaultModel === 'object' ? defaultModel : {},
       createdAt: Date.now(),
     };
 
@@ -142,10 +153,6 @@ class ProfileStore {
         };
       }
     }
-    if (patch.defaultModel !== undefined && typeof patch.defaultModel === 'object') {
-      profile.defaultModel = patch.defaultModel;
-    }
-
     await this.save();
     return profile;
   }
@@ -203,14 +210,57 @@ class ProfileStore {
     return { key: entry.key || null, baseUrl: entry.baseUrl || null };
   }
 
-  /**
-   * From the active profile, return the default model ID for a given agent.
-   * Returns null if no active profile or agent not configured.
-   */
   getDefaultModel(agentId) {
-    const active = this.getActive();
-    if (!active || !active.defaultModel) return null;
-    return active.defaultModel[agentId] || null;
+    return this.getAgentSettings(agentId).defaultModel;
+  }
+
+  getAgentProfileId(agentId) {
+    return this.getAgentSettings(agentId).profileId;
+  }
+
+  getAgentSettings(agentId) {
+    const settings = this.agentSettings.agents[agentId] || {};
+    return {
+      profileId: settings.profileId || null,
+      defaultModel: settings.defaultModel || null,
+    };
+  }
+
+  listAgentSettings(agentIds = []) {
+    const ids = new Set([
+      ...agentIds,
+      ...Object.keys(this.agentSettings.agents || {}),
+    ]);
+    return [...ids].map((agentId) => ({
+      agentId,
+      ...this.getAgentSettings(agentId),
+    }));
+  }
+
+  async updateAgentSettings(agentId, patch) {
+    if (!agentId || typeof agentId !== 'string') {
+      throw Object.assign(new Error('agentId is required'), { statusCode: 400 });
+    }
+    const current = this.getAgentSettings(agentId);
+    const next = { ...current };
+    if (Object.prototype.hasOwnProperty.call(patch, 'profileId')) {
+      if (patch.profileId !== null && typeof patch.profileId !== 'string') {
+        throw Object.assign(new Error('profileId must be a string or null'), { statusCode: 400 });
+      }
+      if (patch.profileId && !this.get(patch.profileId)) {
+        throw Object.assign(new Error('profile not found'), { statusCode: 404 });
+      }
+      next.profileId = patch.profileId || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'defaultModel')) {
+      if (patch.defaultModel !== null && typeof patch.defaultModel !== 'string') {
+        throw Object.assign(new Error('defaultModel must be a string or null'), { statusCode: 400 });
+      }
+      next.defaultModel = patch.defaultModel || null;
+    }
+    this.agentSettings.agents[agentId] = next;
+    await this.save();
+    return this.getAgentSettings(agentId);
   }
 
   /**
@@ -231,7 +281,18 @@ class ProfileStore {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     const temp = `${this.file}.${process.pid}.${crypto.randomUUID()}.tmp`;
     try {
-      await fs.writeFile(temp, `${JSON.stringify(this.profiles, null, 2)}\n`, 'utf8');
+      await fs.writeFile(
+        temp,
+        `${JSON.stringify(
+          {
+            profiles: this.profiles,
+            agentSettings: this.agentSettings,
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
       await fs.rename(temp, this.file);
     } catch (error) {
       // Clean up temp file on failure.
@@ -239,6 +300,21 @@ class ProfileStore {
       throw error;
     }
   }
+}
+
+function normalizeAgentSettings(value) {
+  const settings = { agents: {} };
+  const agents = value && typeof value === 'object' && value.agents && typeof value.agents === 'object'
+    ? value.agents
+    : {};
+  for (const [agentId, entry] of Object.entries(agents)) {
+    if (!entry || typeof entry !== 'object') continue;
+    settings.agents[agentId] = {
+      profileId: typeof entry.profileId === 'string' ? entry.profileId : null,
+      defaultModel: typeof entry.defaultModel === 'string' ? entry.defaultModel : null,
+    };
+  }
+  return settings;
 }
 
 module.exports = { ProfileStore, maskProfile };

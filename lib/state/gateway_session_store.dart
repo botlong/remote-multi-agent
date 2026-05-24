@@ -81,6 +81,7 @@ class GatewaySessionStore extends StateNotifier<GatewaySessionState> {
     String? modelId,
     String? sandbox,
     String? permissionMode,
+    String? profileId,
   }) async {
     final session = await _client.createSession(
       projectId: state.projectId,
@@ -88,6 +89,7 @@ class GatewaySessionStore extends StateNotifier<GatewaySessionState> {
       modelId: modelId,
       sandbox: sandbox,
       permissionMode: permissionMode,
+      profileId: profileId,
     );
     final sessions = [
       session,
