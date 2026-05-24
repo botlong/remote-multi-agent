@@ -9,7 +9,10 @@ function commands(items) {
   for (const item of items) {
     const name = typeof item === 'string' ? item : item.name;
     if (!name) continue;
-    const normalized = name.startsWith('/') || name.startsWith('$') ? name : `/${name}`;
+    const normalized =
+      name.startsWith('/') || name.startsWith('$') || name.startsWith('@')
+        ? name
+        : `/${name}`;
     if (seen.has(normalized)) continue;
     seen.add(normalized);
     out.push({
@@ -55,6 +58,55 @@ async function opencodeJsonCommands(projectDirectory) {
   return [];
 }
 
+async function skillCommands({
+  codexHome,
+  agentsHome,
+  pluginCache,
+} = {}) {
+  const out = [];
+  const skillRoots = [
+    codexHome ? path.join(codexHome, 'skills') : null,
+    agentsHome ? path.join(agentsHome, 'skills') : null,
+    pluginCache || null,
+  ].filter(Boolean);
+
+  for (const root of skillRoots) {
+    const files = await findNamedFiles(root, 'SKILL.md', { maxDepth: 9, maxCount: 500 });
+    for (const file of files) {
+      const meta = await readSkillMeta(file);
+      const skillName = sanitizeCommandName(meta.name || path.basename(path.dirname(file)));
+      if (skillName) {
+        out.push({
+          name: `$${skillName}`,
+          description: meta.description || 'Use Codex skill',
+        });
+      }
+
+      const pluginName = pluginNameForSkill(file, pluginCache);
+      if (pluginName) {
+        out.push({
+          name: `$${pluginName}`,
+          description: 'Use Codex plugin',
+        });
+      }
+    }
+  }
+  return out;
+}
+
+async function pluginMarkdownCommands(pluginCache) {
+  if (!pluginCache) return [];
+  const dirs = await findNamedDirectories(pluginCache, 'commands', {
+    maxDepth: 6,
+    maxCount: 100,
+  });
+  const out = [];
+  for (const dir of dirs) {
+    out.push(...(await markdownCommands(dir)));
+  }
+  return out;
+}
+
 function publicCommand(command) {
   return {
     command: command.command,
@@ -63,9 +115,82 @@ function publicCommand(command) {
   };
 }
 
+async function findNamedFiles(root, filename, { maxDepth, maxCount }) {
+  const out = [];
+  await walk(root, 0, async (entryPath, entry, depth) => {
+    if (out.length >= maxCount) return false;
+    if (entry.isFile() && entry.name === filename) out.push(entryPath);
+    return depth < maxDepth;
+  });
+  return out;
+}
+
+async function findNamedDirectories(root, dirname, { maxDepth, maxCount }) {
+  const out = [];
+  await walk(root, 0, async (entryPath, entry, depth) => {
+    if (out.length >= maxCount) return false;
+    if (entry.isDirectory() && entry.name === dirname) {
+      out.push(entryPath);
+      return false;
+    }
+    return depth < maxDepth;
+  });
+  return out;
+}
+
+async function walk(directory, depth, visitor) {
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const entryPath = path.join(directory, entry.name);
+    const shouldDescend = await visitor(entryPath, entry, depth);
+    if (shouldDescend !== false && entry.isDirectory()) {
+      await walk(entryPath, depth + 1, visitor);
+    }
+  }
+}
+
+async function readSkillMeta(file) {
+  try {
+    const text = await fs.readFile(file, 'utf8');
+    const frontmatter = text.match(/^---\s*([\s\S]*?)\s*---/);
+    const block = frontmatter ? frontmatter[1] : text.slice(0, 2000);
+    return {
+      name: yamlScalar(block, 'name'),
+      description: yamlScalar(block, 'description'),
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
+function yamlScalar(text, key) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = text.match(new RegExp(`^\\s*${escaped}\\s*:\\s*["']?([^"'\\r\\n]+)`, 'm'));
+  return match ? match[1].trim() : '';
+}
+
+function sanitizeCommandName(name) {
+  return String(name || '')
+    .trim()
+    .replace(/^\$+/, '')
+    .replace(/\s+/g, '-');
+}
+
+function pluginNameForSkill(file, pluginCache) {
+  if (!pluginCache) return '';
+  const relative = path.relative(pluginCache, file);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return '';
+  const parts = relative.split(path.sep).filter(Boolean);
+  if (parts.length < 5 || parts[2] === 'skills') return '';
+  if (parts[2] && parts[3] === 'skills') return sanitizeCommandName(parts[1]);
+  return '';
+}
+
 module.exports = {
   commands,
   markdownCommands,
   opencodeJsonCommands,
+  pluginMarkdownCommands,
   publicCommand,
+  skillCommands,
 };

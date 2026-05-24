@@ -12,6 +12,7 @@ const {
   buildCodexArgs,
   runJsonCli,
 } = require('../src/agents');
+const { commands } = require('../src/agents/command_helpers');
 
 test('Codex new sessions skip git repository checks', () => {
   const args = buildCodexArgs({
@@ -82,6 +83,49 @@ test('Codex legacy full-auto sandbox maps to full access bypass', () => {
 
   assert(args.includes('--dangerously-bypass-approvals-and-sandbox'));
   assert.equal(args.includes('full-auto'), false);
+});
+
+test('command normalization preserves shell and mention prefixes', () => {
+  const names = commands(['model', '$superpowers', '@lib/main.dart']).map((c) => c.name);
+
+  assert.deepEqual(names, ['/model', '$superpowers', '@lib/main.dart']);
+});
+
+test('CodexAdapter exposes installed skills and plugin commands', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rma-codex-commands-'));
+  const codexHome = path.join(dir, '.codex');
+  const agentsHome = path.join(dir, '.agents');
+  const userSkill = path.join(codexHome, 'skills', 'playwright');
+  const agentSkill = path.join(agentsHome, 'skills', 'using-superpowers');
+  const pluginRoot = path.join(
+    codexHome,
+    'plugins',
+    'cache',
+    'openai-curated',
+    'superpowers',
+    '6188456f',
+  );
+
+  fs.mkdirSync(userSkill, { recursive: true });
+  fs.mkdirSync(agentSkill, { recursive: true });
+  fs.mkdirSync(path.join(pluginRoot, 'skills', 'brainstorming'), { recursive: true });
+  fs.mkdirSync(path.join(pluginRoot, 'commands'), { recursive: true });
+  fs.writeFileSync(path.join(userSkill, 'SKILL.md'), '---\nname: playwright\n---\n');
+  fs.writeFileSync(path.join(agentSkill, 'SKILL.md'), '---\nname: using-superpowers\n---\n');
+  fs.writeFileSync(
+    path.join(pluginRoot, 'skills', 'brainstorming', 'SKILL.md'),
+    '---\nname: brainstorming\ndescription: Explore designs\n---\n',
+  );
+  fs.writeFileSync(path.join(pluginRoot, 'commands', 'rescue.md'), '# Rescue\n');
+
+  const adapter = new CodexAdapter({ codexHome, agentsHome });
+  const names = (await adapter.commands()).map((c) => c.name);
+
+  assert(names.includes('$playwright'));
+  assert(names.includes('$using-superpowers'));
+  assert(names.includes('$brainstorming'));
+  assert(names.includes('$superpowers'));
+  assert(names.includes('/rescue'));
 });
 
 test('runJsonCli closes stdin by default so one-shot CLIs see EOF', async () => {

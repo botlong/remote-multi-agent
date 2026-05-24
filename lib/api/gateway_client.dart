@@ -149,10 +149,28 @@ class GatewayClient {
     return res.data ?? const <String, dynamic>{};
   }
 
-  Future<List<AgentCommand>> listAgentCommands(String agentId) async {
-    final res = await _dio.get<dynamic>('/agents/${_path(agentId)}/commands');
+  Future<List<AgentCommand>> listAgentCommands(
+    String agentId, {
+    String? projectId,
+  }) async {
+    final res = await _dio.get<dynamic>(
+      '/agents/${_path(agentId)}/commands',
+      queryParameters: <String, dynamic>{
+        if (projectId != null && projectId.isNotEmpty) 'projectId': projectId,
+      },
+    );
     return _readEnvelopeList(res.data, 'commands')
         .map(AgentCommand.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> listFiles(String path) async {
+    final res = await _dio.get<dynamic>(
+      '/files',
+      queryParameters: {'path': path},
+    );
+    return _readList(res.data)
+        .whereType<Map<String, dynamic>>()
         .toList(growable: false);
   }
 
@@ -230,7 +248,10 @@ class GatewayClient {
   }
 
   /// Export session as markdown or JSON string.
-  Future<String> exportSession(String sessionId, {String format = 'markdown'}) async {
+  Future<String> exportSession(
+    String sessionId, {
+    String format = 'markdown',
+  }) async {
     final res = await _dio.get<dynamic>(
       '/sessions/${_path(sessionId)}/export',
       queryParameters: {'format': format},
@@ -293,7 +314,9 @@ class GatewayClient {
   Future<Map<String, dynamic>?> getActiveProfile() async {
     final res = await _dio.get<dynamic>('/settings/active-profile');
     if (res.data == null) return null;
-    if (res.data is Map<String, dynamic>) return res.data as Map<String, dynamic>;
+    if (res.data is Map<String, dynamic>) {
+      return res.data as Map<String, dynamic>;
+    }
     return null;
   }
 

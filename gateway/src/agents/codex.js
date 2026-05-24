@@ -1,12 +1,21 @@
 'use strict';
 
+const os = require('node:os');
+const path = require('node:path');
+
 const {
   commandExists,
   resolveCodexCommand,
   runCapture,
 } = require('../cli');
 const { cachedModels } = require('./model_cache');
-const { commands, publicCommand } = require('./command_helpers');
+const {
+  commands,
+  markdownCommands,
+  pluginMarkdownCommands,
+  publicCommand,
+  skillCommands,
+} = require('./command_helpers');
 const { runJsonCli } = require('./json_cli');
 const { fetchOpenAICompatibleModels } = require('./openai_compatible_models');
 
@@ -52,11 +61,17 @@ const CODEX_COMMANDS = [
 ];
 
 class CodexAdapter {
-  constructor({ profileStore } = {}) {
+  constructor({ profileStore, codexHome, agentsHome, codexPluginCache } = {}) {
     this.id = 'codex';
     this.displayName = 'Codex';
     this.command = resolveCodexCommand();
     this.profileStore = profileStore || null;
+    this.codexHome = codexHome || process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+    this.agentsHome = agentsHome || process.env.AGENTS_HOME || path.join(os.homedir(), '.agents');
+    this.codexPluginCache =
+      codexPluginCache ||
+      process.env.CODEX_PLUGIN_CACHE ||
+      path.join(this.codexHome, 'plugins', 'cache');
   }
 
   async metadata(projectDirectory) {
@@ -68,7 +83,7 @@ class CodexAdapter {
       supportsAttachments: false,
       supportsPermissions: true,
       sessionKind: 'thread',
-      commands: commands(CODEX_COMMANDS),
+      commands: await this.commands(projectDirectory),
       raw: {
         available: commandExists(this.command),
         command: publicCommand(this.command),
@@ -122,8 +137,20 @@ class CodexAdapter {
     ].map((id) => ({ id, displayName: id, raw: { id } }));
   }
 
-  async commands() {
-    return commands(CODEX_COMMANDS);
+  async commands(projectDirectory) {
+    return commands([
+      ...CODEX_COMMANDS,
+      ...(await markdownCommands(projectDirectory
+        ? path.join(projectDirectory, '.codex', 'commands')
+        : null)),
+      ...(await markdownCommands(path.join(this.codexHome, 'commands'))),
+      ...(await pluginMarkdownCommands(this.codexPluginCache)),
+      ...(await skillCommands({
+        codexHome: this.codexHome,
+        agentsHome: this.agentsHome,
+        pluginCache: this.codexPluginCache,
+      })),
+    ]);
   }
 
   run({ session, prompt, onEvent, onText, onToolCall, onAgentSessionId, onExit }) {

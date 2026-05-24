@@ -174,7 +174,10 @@ GatewayModelView readModel(dynamic value) {
 GatewayCommandView readCommand(dynamic value) {
   final map = _asMap(value);
   var name = _string(map, value, ['name', 'id', 'command']);
-  if (name.isNotEmpty && !name.startsWith('/') && !name.startsWith(r'$')) {
+  if (name.isNotEmpty &&
+      !name.startsWith('/') &&
+      !name.startsWith(r'$') &&
+      !name.startsWith('@')) {
     name = '/$name';
   }
   return GatewayCommandView(

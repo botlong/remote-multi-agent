@@ -47,6 +47,10 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   bool _hasNewWhileAway = false;
   final List<Attachment> _attachments = [];
   String? _activeProfileName;
+  String? _agentCommandsKey;
+  Future<List<GatewayCommandView>>? _agentCommandsFuture;
+  String? _fileMentionRoot;
+  Future<List<GatewayCommandView>>? _fileMentionFuture;
 
   @override
   void initState() {
@@ -85,6 +89,21 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant GatewayChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session.agentId != widget.session.agentId ||
+        oldWidget.project.id != widget.project.id) {
+      _agentCommandsKey = null;
+      _agentCommandsFuture = null;
+    }
+    if (oldWidget.session.directory != widget.session.directory ||
+        oldWidget.project.directory != widget.project.directory) {
+      _fileMentionRoot = null;
+      _fileMentionFuture = null;
+    }
+  }
+
   void _onScroll() {
     final away = _scroll.hasClients && _scroll.offset > _scrollAwayThreshold;
     if (away != _isScrolledAway) {
@@ -99,28 +118,28 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // OS may have killed the SSE socket while backgrounded; refresh it.
-      ref
-          .read(gatewayChatProvider(widget.session.id).notifier)
-          .reconnect();
+      ref.read(gatewayChatProvider(widget.session.id).notifier).reconnect();
     }
   }
 
   void _onInputChanged() {
-    final text = _input.text;
-    final shouldShow = text.startsWith('/') || text.startsWith(r'$');
-    if (shouldShow != _showCommands) {
-      setState(() => _showCommands = shouldShow);
-    }
-    final hasAt = text.contains('@') && !text.startsWith('/') && !text.startsWith(r'$');
-    if (hasAt != _showFileHints) {
-      setState(() => _showFileHints = hasAt);
+    final token = _activeSuggestionToken();
+    final shouldShow = token.startsWith('/') ||
+        token.startsWith(r'$') ||
+        token.startsWith('@');
+    if (shouldShow != _showCommands || _showFileHints) {
+      setState(() {
+        _showCommands = shouldShow;
+        _showFileHints = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(gatewayChatProvider(widget.session.id));
-    final messages = chatState.orderedMessages.toList(growable: false).reversed.toList();
+    final messages =
+        chatState.orderedMessages.toList(growable: false).reversed.toList();
     final status = _statusFromState(chatState);
     final agent =
         widget.agent ?? _agentFromCatalog(ref, widget.session.agentId);
@@ -160,9 +179,15 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'handoff', child: Text('Hand off to agent...')),
+              const PopupMenuItem(
+                value: 'handoff',
+                child: Text('Hand off to agent...'),
+              ),
               const PopupMenuDivider(),
-              const PopupMenuItem(value: 'markdown', child: Text('Copy as Markdown')),
+              const PopupMenuItem(
+                value: 'markdown',
+                child: Text('Copy as Markdown'),
+              ),
               const PopupMenuItem(value: 'json', child: Text('Copy as JSON')),
             ],
           ),
@@ -189,11 +214,14 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
                           widget.session.modelId!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                fontFamily: 'monospace',
-                                fontSize: 10,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                    fontFamily: 'monospace',
+                                    fontSize: 10,
+                                  ),
                         ),
                       ),
                     ] else
@@ -201,17 +229,24 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
                     if (_activeProfileName != null) ...[
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.tertiaryContainer,
+                          color:
+                              Theme.of(context).colorScheme.tertiaryContainer,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           _activeProfileName!,
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            fontSize: 9,
-                            color: Theme.of(context).colorScheme.onTertiaryContainer,
-                          ),
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    fontSize: 9,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onTertiaryContainer,
+                                  ),
                         ),
                       ),
                     ],
@@ -231,105 +266,102 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
           _lastMessageCount = messages.length;
 
           return Column(
-        children: [
-          if (chatState.connection == GatewayChatConnectionState.disconnected)
-            const _DisconnectedBanner()
-          else if (chatState.connection == GatewayChatConnectionState.connecting)
-            const _ConnectingBanner(),
-          Expanded(
-            child: Stack(
-              children: [
-                GestureDetector(
-                  onTap: () => _focus.unfocus(),
-                  behavior: HitTestBehavior.translucent,
-                  child: messages.isEmpty
-                      ? const _EmptyChat()
-                      : ListView.builder(
-                          controller: _scroll,
-                          reverse: true,
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                          itemCount: messages.length,
-                          itemBuilder: (_, index) {
-                            final msg = messages[index];
-                            return MessageBubble(
-                              message: msg,
-                              onDelete: () => _deleteMessage(msg.id),
-                              onResend: (text) => _resend(text),
-                              onEditResend: (text) => _editResend(text),
-                              onQuote: (text) => _quote(text),
-                            );
-                          },
-                        ),
-                ),
-                if (_isScrolledAway || _hasNewWhileAway)
-                  Positioned(
-                    bottom: 8,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: _ScrollToBottomButton(
-                        hasNew: _hasNewWhileAway,
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          _scrollToBottom();
-                          setState(() {
-                            _isScrolledAway = false;
-                            _hasNewWhileAway = false;
-                          });
-                        },
-                      ),
+            children: [
+              if (chatState.connection ==
+                  GatewayChatConnectionState.disconnected)
+                const _DisconnectedBanner()
+              else if (chatState.connection ==
+                  GatewayChatConnectionState.connecting)
+                const _ConnectingBanner(),
+              Expanded(
+                child: Stack(
+                  children: [
+                    GestureDetector(
+                      onTap: () => _focus.unfocus(),
+                      behavior: HitTestBehavior.translucent,
+                      child: messages.isEmpty
+                          ? const _EmptyChat()
+                          : ListView.builder(
+                              controller: _scroll,
+                              reverse: true,
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                              itemCount: messages.length,
+                              itemBuilder: (_, index) {
+                                final msg = messages[index];
+                                return MessageBubble(
+                                  message: msg,
+                                  onDelete: () => _deleteMessage(msg.id),
+                                  onResend: (text) => _resend(text),
+                                  onEditResend: (text) => _editResend(text),
+                                  onQuote: (text) => _quote(text),
+                                );
+                              },
+                            ),
                     ),
-                  ),
-              ],
-            ),
-          ),
-          if (_showCommands)
-            FutureBuilder<List<GatewayCommandView>>(
-              future: _commandsFuture(agent),
-              builder: (context, snapshot) {
-                final commands = _filteredCommands(snapshot.data ?? const []);
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    commands.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-                if (commands.isEmpty) return const SizedBox.shrink();
-                return _CommandSuggestions(
-                  commands: commands,
-                  onSelected: (command) {
-                    _input.text = '${command.name} ';
-                    _input.selection =
-                        TextSelection.collapsed(offset: _input.text.length);
-                    _focus.requestFocus();
+                    if (_isScrolledAway || _hasNewWhileAway)
+                      Positioned(
+                        bottom: 8,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: _ScrollToBottomButton(
+                            hasNew: _hasNewWhileAway,
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              _scrollToBottom();
+                              setState(() {
+                                _isScrolledAway = false;
+                                _hasNewWhileAway = false;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (_showCommands)
+                FutureBuilder<List<GatewayCommandView>>(
+                  future: _suggestionsFuture(agent),
+                  builder: (context, snapshot) {
+                    final commands =
+                        _filteredCommands(snapshot.data ?? const []);
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        commands.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    if (commands.isEmpty) return const SizedBox.shrink();
+                    return _CommandSuggestions(
+                      commands: commands,
+                      onSelected: _handleSuggestionSelected,
+                      maxHeight: 280,
+                    );
                   },
-                  maxHeight: 280,
-                );
-              },
-            ),
-          if (_showFileHints)
-            _FileHintBar(directory: widget.session.directory),
-          if (_attachments.isNotEmpty)
-            AttachmentPreviewStrip(
-              attachments: _attachments,
-              onRemove: (i) => setState(() => _attachments.removeAt(i)),
-            ),
-          if (chatState.usage != null) _UsageBar(usage: chatState.usage!),
-          _InputBar(
-            controller: _input,
-            focusNode: _focus,
-            running: status == 'running',
-            onSend: _send,
-            onAbort: _abort,
-            onAttach: _pickAttachments,
-          ),
-        ],
-      );
+                ),
+              if (_showFileHints)
+                _FileHintBar(directory: widget.session.directory),
+              if (_attachments.isNotEmpty)
+                AttachmentPreviewStrip(
+                  attachments: _attachments,
+                  onRemove: (i) => setState(() => _attachments.removeAt(i)),
+                ),
+              if (chatState.usage != null) _UsageBar(usage: chatState.usage!),
+              _InputBar(
+                controller: _input,
+                focusNode: _focus,
+                running: status == 'running',
+                onSend: _send,
+                onAbort: _abort,
+                onAttach: _pickAttachments,
+              ),
+            ],
+          );
         },
       ),
     );
   }
-
 
   String _statusFromState(dynamic state) {
     if (state.isStreaming == true) return 'running';
@@ -344,28 +376,156 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   List<GatewayCommandView> _filteredCommands(
     List<GatewayCommandView> commands,
   ) {
-    final query = _input.text.trim().toLowerCase();
-    if (query == '/' || query == r'$') return commands;
-    return commands.where((c) => c.name.toLowerCase().contains(query)).toList();
+    final query = _activeSuggestionToken().toLowerCase();
+    if (query.isEmpty) return const <GatewayCommandView>[];
+    final filtered = query == '/' || query == r'$' || query == '@'
+        ? commands
+        : commands
+            .where((c) => c.name.toLowerCase().startsWith(query))
+            .toList(growable: false);
+    return filtered.take(80).toList(growable: false);
+  }
+
+  Future<List<GatewayCommandView>> _suggestionsFuture(
+    GatewayAgentView? agent,
+  ) async {
+    final token = _activeSuggestionToken();
+    if (token.startsWith('@')) return _fileMentionCommands();
+    return _commandsFuture(agent);
   }
 
   Future<List<GatewayCommandView>> _commandsFuture(
     GatewayAgentView? agent,
+  ) {
+    final agentId = agent?.id ?? widget.session.agentId;
+    final key = '$agentId:${widget.project.id}';
+    if (_agentCommandsKey != key || _agentCommandsFuture == null) {
+      _agentCommandsKey = key;
+      _agentCommandsFuture = _loadCommands(agent, agentId);
+    }
+    return _agentCommandsFuture!;
+  }
+
+  Future<List<GatewayCommandView>> _loadCommands(
+    GatewayAgentView? agent,
+    String agentId,
   ) async {
     final local = agent?.commands ?? const <GatewayCommandView>[];
-    if (local.isNotEmpty) return local;
-    if (agent == null) return const <GatewayCommandView>[];
     final notifier = ref.read(agentCatalogProvider.notifier);
-    final commands = await notifier.commandsFor(agent.id);
-    final fromGateway = commands
-        .map(
-          (command) => GatewayCommandView(
-            name: command.name,
-            description: command.description,
-          ),
-        )
-        .toList(growable: false);
-    return fromGateway.isNotEmpty ? fromGateway : _fallbackCommands(agent.id);
+    try {
+      final commands = await notifier.commandsFor(
+        agentId,
+        projectId: widget.project.id,
+      );
+      final fromGateway = commands
+          .map(
+            (command) => GatewayCommandView(
+              name: command.name,
+              description: command.description,
+            ),
+          )
+          .toList(growable: false);
+      if (fromGateway.isNotEmpty) return fromGateway;
+    } catch (_) {
+      // Keep suggestions usable when connected to an older gateway.
+    }
+    return local.isNotEmpty ? local : _fallbackCommands(agentId);
+  }
+
+  Future<List<GatewayCommandView>> _fileMentionCommands() {
+    final root = widget.session.directory.isNotEmpty
+        ? widget.session.directory
+        : widget.project.directory;
+    if (root.isEmpty) return Future.value(const <GatewayCommandView>[]);
+    if (_fileMentionRoot != root || _fileMentionFuture == null) {
+      _fileMentionRoot = root;
+      _fileMentionFuture = _loadFileMentionCommands(root);
+    }
+    return _fileMentionFuture!;
+  }
+
+  Future<List<GatewayCommandView>> _loadFileMentionCommands(String root) async {
+    try {
+      final nodes = await ref.read(gatewayClientProvider).listFiles(root);
+      final out = <GatewayCommandView>[];
+      void visit(List<dynamic> items) {
+        for (final item in items) {
+          if (out.length >= 500) return;
+          if (item is! Map) continue;
+          final map = item.cast<String, dynamic>();
+          final isDirectory = map['isDirectory'] == true;
+          if (isDirectory) {
+            visit(map['children'] as List<dynamic>? ?? const <dynamic>[]);
+            continue;
+          }
+          final path = (map['path'] ?? map['name'] ?? '').toString();
+          final relative = _relativeMentionPath(path, root);
+          if (relative.isEmpty) continue;
+          out.add(
+            GatewayCommandView(
+              name: '@$relative',
+              description: 'File mention',
+            ),
+          );
+        }
+      }
+
+      visit(nodes);
+      out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return out;
+    } catch (_) {
+      return const <GatewayCommandView>[];
+    }
+  }
+
+  String _activeSuggestionToken() {
+    final text = _input.text;
+    final selectionOffset = _input.selection.baseOffset;
+    final caret = selectionOffset < 0
+        ? text.length
+        : selectionOffset.clamp(0, text.length).toInt();
+    final beforeCaret = text.substring(0, caret);
+    final match = RegExp(r'\S+$').firstMatch(beforeCaret);
+    return match?.group(0) ?? '';
+  }
+
+  Future<void> _handleSuggestionSelected(GatewayCommandView command) async {
+    final name = command.name.trim();
+    if (name.isEmpty) return;
+
+    if (name == r'$') {
+      _replaceActiveSuggestionToken(r'$');
+      _focus.requestFocus();
+      return;
+    }
+
+    if (name.startsWith('@')) {
+      _replaceActiveSuggestionToken(name);
+      _focus.requestFocus();
+      return;
+    }
+
+    _input.text = name;
+    _input.selection = TextSelection.collapsed(offset: _input.text.length);
+    await _send();
+  }
+
+  void _replaceActiveSuggestionToken(String value) {
+    final text = _input.text;
+    final selectionOffset = _input.selection.baseOffset;
+    final caret = selectionOffset < 0
+        ? text.length
+        : selectionOffset.clamp(0, text.length).toInt();
+    final beforeCaret = text.substring(0, caret);
+    final afterCaret = text.substring(caret);
+    final match = RegExp(r'\S+$').firstMatch(beforeCaret);
+    final start = match?.start ?? caret;
+    final suffix = afterCaret.replaceFirst(RegExp(r'^\s+'), '');
+    final nextText = '${text.substring(0, start)}$value '
+        '${suffix.isEmpty ? '' : suffix}';
+    final nextCaret = start + value.length + 1;
+    _input.text = nextText;
+    _input.selection = TextSelection.collapsed(offset: nextCaret);
   }
 
   Future<void> _pickAttachments() async {
@@ -491,10 +651,26 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
 
   /// Passthrough commands that should always be sent directly to the gateway.
   static const _passthroughCommands = <String>{
-    '/plan', '/goal', '/personality', '/raw', '/memory', '/mcp', '/config',
-    '/doctor', '/agents', '/login', '/logout', '/bug', '/feedback',
-    '/experimental', '/debug-config', '/plugins', '/hooks', '/apps',
-    '/agent', '/mention',
+    '/plan',
+    '/goal',
+    '/personality',
+    '/raw',
+    '/memory',
+    '/mcp',
+    '/config',
+    '/doctor',
+    '/agents',
+    '/login',
+    '/logout',
+    '/bug',
+    '/feedback',
+    '/experimental',
+    '/debug-config',
+    '/plugins',
+    '/hooks',
+    '/apps',
+    '/agent',
+    '/mention',
   };
 
   /// Confirm commands that show a confirmation dialog before sending.
@@ -662,8 +838,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     );
     if (selected == null || !mounted) return;
 
-    final notifier =
-        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    final notifier = ref.read(gatewayChatProvider(widget.session.id).notifier);
     await notifier.sendSlashCommand('/permissions $selected');
   }
 
@@ -712,15 +887,13 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     );
     if (path == null || !mounted) return;
 
-    final notifier =
-        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    final notifier = ref.read(gatewayChatProvider(widget.session.id).notifier);
     await notifier.sendSlashCommand('/add-dir $path');
   }
 
   Future<void> _handleSessionsCommand() async {
     final projectId = widget.session.projectId;
-    final sessionState =
-        ref.read(gatewaySessionListProvider(projectId));
+    final sessionState = ref.read(gatewaySessionListProvider(projectId));
     final sessionViews = readSessions(sessionState);
 
     if (!mounted) return;
@@ -780,8 +953,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     );
     if (confirmed != true || !mounted) return;
 
-    final notifier =
-        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    final notifier = ref.read(gatewayChatProvider(widget.session.id).notifier);
     await notifier.sendSlashCommand(command);
   }
 
@@ -809,8 +981,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
     try {
       final projectId = widget.session.projectId;
       final agentId = widget.session.agentId;
-      final notifier =
-          ref.read(gatewaySessionListProvider(projectId).notifier);
+      final notifier = ref.read(gatewaySessionListProvider(projectId).notifier);
       final created = await notifier.createSession(agentId: agentId);
       if (!mounted) return;
       final session = readSession(created);
@@ -888,8 +1059,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   }
 
   Future<void> _handleFastCommand() async {
-    final notifier =
-        ref.read(gatewayChatProvider(widget.session.id).notifier);
+    final notifier = ref.read(gatewayChatProvider(widget.session.id).notifier);
     await notifier.sendSlashCommand('/fast');
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -950,15 +1120,31 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
   static List<_PermOption> _permissionOptionsFor(String agentId) {
     return switch (agentId) {
       'claude-code' => const [
-          _PermOption('acceptEdits', 'Accept Edits', 'Auto-accept file edits (default)'),
+          _PermOption(
+            'acceptEdits',
+            'Accept Edits',
+            'Auto-accept file edits (default)',
+          ),
           _PermOption('auto', 'Auto', 'Auto-approve most actions'),
           _PermOption('plan', 'Plan', 'Plan mode - no code changes'),
-          _PermOption('bypassPermissions', 'Bypass All', 'Skip all permission prompts (dangerous)'),
+          _PermOption(
+            'bypassPermissions',
+            'Bypass All',
+            'Skip all permission prompts (dangerous)',
+          ),
         ],
       'codex' => const [
-          _PermOption('workspace-write', 'Write', 'Write to workspace (default)'),
+          _PermOption(
+            'workspace-write',
+            'Write',
+            'Write to workspace (default)',
+          ),
           _PermOption('read-only', 'Read-only', 'Read workspace only'),
-          _PermOption('danger-full-access', 'Full Access', 'Full disk access (dangerous)'),
+          _PermOption(
+            'danger-full-access',
+            'Full Access',
+            'Full disk access (dangerous)',
+          ),
         ],
       'opencode' => const [
           _PermOption('build', 'Build', 'Standard build mode (default)'),
@@ -1011,8 +1197,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
                         ),
                       )
                       .toList(),
-                  onChanged: (v) =>
-                      setDialogState(() => selectedAgent = v),
+                  onChanged: (v) => setDialogState(() => selectedAgent = v),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -1050,9 +1235,7 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
           ref.read(gatewayChatProvider(widget.session.id).notifier);
       await notifier.handoff(
         agentId: result['agentId']!,
-        prompt: result['prompt']?.isNotEmpty == true
-            ? result['prompt']
-            : null,
+        prompt: result['prompt']?.isNotEmpty == true ? result['prompt'] : null,
       );
     } catch (e) {
       if (!mounted) return;
@@ -1075,7 +1258,10 @@ class _CommandSuggestions extends StatelessWidget {
   final double maxHeight;
 
   IconData _iconFor(String name) {
-    if (name.startsWith(r'$')) return Icons.terminal;
+    if (name.startsWith('@')) return Icons.attach_file;
+    if (name.startsWith(r'$')) {
+      return name == r'$' ? Icons.terminal : Icons.extension_outlined;
+    }
     return switch (name) {
       '/model' || '/models' || '/fast' => Icons.psychology_outlined,
       '/compact' || '/summarize' => Icons.compress,
@@ -1247,9 +1433,10 @@ class _InputBar extends StatelessWidget {
                   decoration: InputDecoration(
                     hintText: running
                         ? 'Send guidance to running agent...'
-                        : 'Message, /command, or \$shell',
+                        : 'Message, /command, @file, or \$skill/shell',
                     filled: true,
-                    fillColor: scheme.surfaceContainerHigh.withValues(alpha: 0.6),
+                    fillColor:
+                        scheme.surfaceContainerHigh.withValues(alpha: 0.6),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(22),
                       borderSide: BorderSide.none,
@@ -1437,6 +1624,19 @@ GatewayAgentView? _agentFromCatalog(WidgetRef ref, String agentId) {
   return null;
 }
 
+String _relativeMentionPath(String path, String root) {
+  final normalizedPath = path.replaceAll('\\', '/');
+  final normalizedRoot =
+      root.replaceAll('\\', '/').replaceFirst(RegExp(r'/+$'), '');
+  final lowerPath = normalizedPath.toLowerCase();
+  final lowerRoot = normalizedRoot.toLowerCase();
+  if (normalizedRoot.isNotEmpty && lowerPath.startsWith('$lowerRoot/')) {
+    return normalizedPath.substring(normalizedRoot.length + 1);
+  }
+  final parts = normalizedPath.split('/').where((p) => p.isNotEmpty).toList();
+  return parts.isEmpty ? '' : parts.last;
+}
+
 List<GatewayCommandView> _fallbackCommands(String agentId) {
   return switch (agentId) {
     'codex' => const [
@@ -1445,7 +1645,10 @@ List<GatewayCommandView> _fallbackCommands(String agentId) {
         GatewayCommandView(name: '/plan', description: 'Plan a goal'),
         GatewayCommandView(name: '/compact', description: 'Compress context'),
         GatewayCommandView(name: '/status', description: 'Show status'),
-        GatewayCommandView(name: '/permissions', description: 'Manage permissions'),
+        GatewayCommandView(
+          name: '/permissions',
+          description: 'Manage permissions',
+        ),
         GatewayCommandView(name: r'$', description: 'Run a shell command'),
       ],
     'claude-code' => const [
@@ -1454,10 +1657,16 @@ List<GatewayCommandView> _fallbackCommands(String agentId) {
         GatewayCommandView(name: '/status', description: 'Show status'),
         GatewayCommandView(name: '/help', description: 'Show help'),
         GatewayCommandView(name: '/clear', description: 'Clear conversation'),
-        GatewayCommandView(name: '/permissions', description: 'Manage permissions'),
+        GatewayCommandView(
+          name: '/permissions',
+          description: 'Manage permissions',
+        ),
       ],
-    'opencode' => const [
-        GatewayCommandView(name: '/models', description: 'Show or switch models'),
+      'opencode' => const [
+        GatewayCommandView(
+          name: '/models',
+          description: 'Show or switch models',
+        ),
         GatewayCommandView(name: '/compact', description: 'Compress context'),
         GatewayCommandView(name: '/help', description: 'Show help'),
         GatewayCommandView(name: '/new', description: 'Start a new session'),
@@ -1613,7 +1822,11 @@ class _SessionPickerSheet extends StatelessWidget {
                     style: theme.textTheme.bodySmall,
                   ),
                   trailing: isCurrent
-                      ? Icon(Icons.check, color: theme.colorScheme.primary, size: 18)
+                      ? Icon(
+                          Icons.check,
+                          color: theme.colorScheme.primary,
+                          size: 18,
+                        )
                       : null,
                   onTap: () => Navigator.pop(ctx, s.id),
                 );
@@ -1950,7 +2163,11 @@ class _FileHintBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,
-        border: Border(top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.2))),
+        border: Border(
+          top: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.2),
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -1970,7 +2187,10 @@ class _FileHintBar extends StatelessWidget {
   }
 
   static String _shortDir(String path) {
-    final parts = path.split(RegExp(r'[/\\]')).where((p) => p.isNotEmpty).toList();
-    return parts.length > 2 ? '.../${parts.sublist(parts.length - 2).join('/')}' : path;
+    final parts =
+        path.split(RegExp(r'[/\\]')).where((p) => p.isNotEmpty).toList();
+    return parts.length > 2
+        ? '.../${parts.sublist(parts.length - 2).join('/')}'
+        : path;
   }
 }
