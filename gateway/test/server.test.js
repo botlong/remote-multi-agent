@@ -229,6 +229,41 @@ test('gateway stores CLI stderr when an adapter exits with an error', async (t) 
   assert.equal(messages[1].parts[0].text, 'cli usage error');
 });
 
+test('Codex permissions slash command updates the stored sandbox', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rma-gateway-perms-'));
+  const dataFile = path.join(root, 'store.json');
+  const projectDir = path.join(root, 'project');
+  await fs.mkdir(projectDir);
+
+  const adapters = new SingleAdapterRegistry(new FakeCodexAdapter());
+  const server = await createGatewayServer({ dataFile, adapters });
+  await listen(server);
+  t.after(() => {
+    server.closeAllRuns?.();
+    server.close();
+  });
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const project = await postJson(`${base}/projects`, { directory: projectDir });
+  const session = await postJson(`${base}/projects/${project.id}/sessions`, {
+    agentId: 'codex',
+    sandbox: 'workspace-write',
+  });
+  assert.equal(session.raw.sandbox, 'workspace-write');
+
+  const accepted = await postJson(`${base}/sessions/${session.id}/messages`, {
+    text: '/permissions danger-full-access',
+  });
+  assert.equal(accepted.accepted, true);
+
+  const updated = await getJson(`${base}/sessions/${session.id}`);
+  assert.equal(updated.raw.sandbox, 'danger-full-access');
+
+  const messages = await getJson(`${base}/sessions/${session.id}/messages`);
+  assert.equal(messages.length, 1);
+  assert.match(messages[0].parts[0].text, /Codex permissions set to danger-full-access/);
+});
+
 test('gateway startup marks orphaned running messages as error', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rma-gateway-recover-'));
   const dataFile = path.join(root, 'store.json');
@@ -368,6 +403,27 @@ class FakeAdapter {
     });
     return {
       abort() {},
+    };
+  }
+}
+
+class FakeCodexAdapter extends FakeAdapter {
+  constructor() {
+    super();
+    this.id = 'codex';
+    this.displayName = 'Codex';
+  }
+
+  async metadata() {
+    return {
+      id: 'codex',
+      displayName: 'Codex',
+      supportsModels: true,
+      supportsSlashCommands: true,
+      supportsAttachments: false,
+      supportsPermissions: true,
+      sessionKind: 'thread',
+      commands: [],
     };
   }
 }

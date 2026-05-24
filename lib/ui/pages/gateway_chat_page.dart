@@ -7,6 +7,7 @@ import '../../models/part.dart';
 import '../../state/gateway_providers.dart';
 import '../../state/notification_service.dart';
 import '../../state/settings_store.dart';
+import '../widgets/activity_timeline.dart';
 import '../widgets/agent_activity_bar.dart';
 import '../widgets/agent_badge.dart';
 import '../widgets/attachment_picker.dart';
@@ -317,6 +318,8 @@ class _GatewayChatPageState extends ConsumerState<GatewayChatPage>
               attachments: _attachments,
               onRemove: (i) => setState(() => _attachments.removeAt(i)),
             ),
+          if (chatState.activities.isNotEmpty)
+            ActivityTimeline(activities: chatState.activities),
           if (chatState.activeTool != null)
             AgentActivityBar(activeTool: chatState.activeTool!),
           if (chatState.usage != null) _UsageBar(usage: chatState.usage!),

@@ -38,6 +38,8 @@ function runJsonCli({
     lastFullTextByKey: new Map(),
     sawText: false,
     stderrLines: [],
+    activitySeq: 0,
+    activitiesById: new Map(),
   };
   readLines(child.stdout, (line) => {
     const raw = parseJsonLine(line);
@@ -51,6 +53,14 @@ function runJsonCli({
       data: { stream: 'stdout', eventType },
       raw,
     });
+    const activity = activityFromRaw(raw, state, eventType);
+    if (activity) {
+      onEvent({
+        type: 'activity.updated',
+        data: { activity },
+        raw,
+      });
+    }
     const agentSessionId = extractAgentSessionId(raw);
     if (agentSessionId) onAgentSessionId(agentSessionId, raw);
     const delta = extractTextDelta(raw, state);
@@ -73,6 +83,11 @@ function runJsonCli({
     onEvent({
       type: 'command.updated',
       data: { stream: 'stderr', text: line },
+      raw: { line },
+    });
+    onEvent({
+      type: 'activity.updated',
+      data: { activity: outputActivity('stderr', line, state) },
       raw: { line },
     });
   });
@@ -118,6 +133,145 @@ function runJsonCli({
       killProcessTree(child);
     },
   };
+}
+
+function activityFromRaw(raw, state, eventType) {
+  const toolCall = extractToolCall(raw);
+  if (toolCall) return activityFromToolCall(toolCall, state);
+
+  const text = extractStatusText(raw, eventType);
+  if (text) {
+    const sequence = ++state.activitySeq;
+    return {
+      id: `status-${sequence}`,
+      kind: 'status',
+      status: 'info',
+      title: text,
+      sequence,
+    };
+  }
+  return null;
+}
+
+function activityFromToolCall(toolCall, state) {
+  const id = toolCall.callId || toolCall.toolUseId || `tool-${state.activitySeq + 1}`;
+  const existing = state.activitiesById.get(id) || null;
+  const sequence = existing?.sequence || ++state.activitySeq;
+  const input = normalizeToolInput(toolCall.input);
+  const command = pickCommand(input, toolCall.name);
+  const outputDelta = normalizeOutput(toolCall.output);
+  const status = normalizeActivityStatus(toolCall.status, outputDelta);
+  const knownCommand = command || existing?.command || '';
+  const kind = knownCommand ? 'command' : existing?.kind || 'tool';
+  const toolName = toolCall.name || existing?.tool || 'tool';
+  const title = activityTitle({
+    kind,
+    status,
+    command: knownCommand,
+    toolName,
+  });
+  const cached = {
+    sequence,
+    kind,
+    command: knownCommand || null,
+    tool: toolName,
+  };
+  state.activitiesById.set(id, cached);
+
+  return {
+    id,
+    kind: cached.kind,
+    status,
+    title,
+    sequence,
+    tool: toolName,
+    ...(cached.command ? { command: cached.command } : {}),
+    ...(Object.keys(input).length > 0 ? { input } : {}),
+    ...(outputDelta ? { outputDelta } : {}),
+  };
+}
+
+function outputActivity(stream, line, state) {
+  const sequence = ++state.activitySeq;
+  const outputDelta = line.endsWith('\n') ? line : `${line}\n`;
+  return {
+    id: `${stream}-${sequence}`,
+    kind: 'output',
+    status: 'info',
+    title: `${stream}: ${truncateLine(line, 120)}`,
+    stream,
+    outputDelta,
+    sequence,
+  };
+}
+
+function normalizeToolInput(input) {
+  if (!input) return {};
+  if (typeof input === 'string') {
+    const parsed = tryParseJson(input);
+    if (parsed) return parsed;
+    return { command: input };
+  }
+  if (input && typeof input === 'object') return { ...input };
+  return {};
+}
+
+function pickCommand(input, toolName) {
+  const command = input.command || input.cmd;
+  if (typeof command === 'string' && command.trim()) return command.trim();
+  const lower = String(toolName || '').toLowerCase();
+  if (lower === 'bash' || lower === 'shell' || lower.includes('command')) {
+    const text = input.text || input.code || input.script;
+    if (typeof text === 'string' && text.trim()) return text.trim();
+  }
+  return '';
+}
+
+function normalizeOutput(output) {
+  if (output === null || output === undefined) return '';
+  if (typeof output === 'string') {
+    return output.endsWith('\n') ? output : `${output}\n`;
+  }
+  try {
+    return `${JSON.stringify(output, null, 2)}\n`;
+  } catch (_) {
+    return `${String(output)}\n`;
+  }
+}
+
+function normalizeActivityStatus(status, outputDelta) {
+  if (status === 'error') return 'error';
+  if (status === 'completed' || outputDelta) return 'completed';
+  if (status === 'running') return 'running';
+  return 'info';
+}
+
+function activityTitle({ kind, status, command, toolName }) {
+  if (kind === 'command') {
+    if (status === 'running') return `Running ${command}`;
+    if (status === 'error') return `Failed ${command}`;
+    if (status === 'completed') return `Ran ${command}`;
+    return command;
+  }
+  if (status === 'running') return `Running ${toolName}`;
+  if (status === 'error') return `${toolName} failed`;
+  if (status === 'completed') return `${toolName} completed`;
+  return toolName;
+}
+
+function extractStatusText(raw, eventType) {
+  if (raw.type === 'system' && raw.subtype === 'init') return 'Session initialized';
+  if (raw.type === 'result' && typeof raw.result === 'string') return 'Run completed';
+  const message = raw.message || raw.status || raw.summary;
+  if (typeof message === 'string' && message.trim()) {
+    return `${eventType}: ${truncateLine(message.trim(), 160)}`;
+  }
+  return '';
+}
+
+function truncateLine(text, max) {
+  const compact = String(text || '').replace(/\s+/g, ' ').trim();
+  return compact.length > max ? `${compact.slice(0, max - 1)}...` : compact;
 }
 
 function extractTextDelta(raw, state) {

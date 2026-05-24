@@ -60,3 +60,36 @@ test('Codex model listing uses the selected OpenAI profile credentials', async (
     },
   ]);
 });
+
+test('Codex model listing adds /v1 for OpenAI-compatible root URLs', async (t) => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    return {
+      ok: true,
+      async json() {
+        return { data: [{ id: 'model-from-compatible-root' }] };
+      },
+    };
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const adapter = new CodexAdapter({
+    profileStore: {
+      getKeyForProviderById() {
+        return {
+          key: 'mr-compatible-secret',
+          baseUrl: 'https://mr.zhi-yuan.net',
+        };
+      },
+    },
+  });
+
+  const models = await adapter._fetchModels({ profileId: 'profile-zhiyuan' });
+
+  assert.equal(calls[0], 'https://mr.zhi-yuan.net/v1/models');
+  assert.equal(models[0].id, 'model-from-compatible-root');
+});

@@ -11,6 +11,7 @@ const { OpenCodeServerManager } = require('../opencode_server');
 const { cachedModels } = require('./model_cache');
 const { commands, markdownCommands, opencodeJsonCommands, publicCommand } = require('./command_helpers');
 const { runJsonCli } = require('./json_cli');
+const { fetchOpenAICompatibleModels } = require('./openai_compatible_models');
 const {
   providerModels,
   splitOpenCodeModel,
@@ -87,7 +88,10 @@ class OpenCodeAdapter {
     return cachedModels(`opencode:${profileId}`, () => this._fetchModels(options));
   }
 
-  async _fetchModels() {
+  async _fetchModels(options = {}) {
+    const profileModels = await this._fetchProfileModels(options.profileId);
+    if (profileModels.length > 0) return profileModels;
+
     try {
       const providers = await this.server.request('/provider');
       const models = providerModels(providers);
@@ -104,6 +108,23 @@ class OpenCodeAdapter {
         .map((id) => ({ id, displayName: id, raw: { id } }));
     }
     return [{ id: 'opencode/big-pickle', displayName: 'opencode/big-pickle', raw: {} }];
+  }
+
+  async _fetchProfileModels(profileId) {
+    const opencodeKey = this.profileStore?.getKeyForProviderById(profileId, 'opencode');
+    const openaiKey = this.profileStore?.getKeyForProviderById(profileId, 'openai');
+    const profileKey = opencodeKey || openaiKey;
+    if (!profileKey?.key) return [];
+    try {
+      return await fetchOpenAICompatibleModels({
+        apiKey: profileKey.key,
+        baseUrl: profileKey.baseUrl,
+        idPrefix: 'opencode/',
+      });
+    } catch (err) {
+      console.warn(`[opencode] Failed to fetch models from selected profile: ${err.message}`);
+      return [];
+    }
   }
 
   async commands(projectDirectory) {

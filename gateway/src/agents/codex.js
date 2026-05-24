@@ -8,6 +8,7 @@ const {
 const { cachedModels } = require('./model_cache');
 const { commands, publicCommand } = require('./command_helpers');
 const { runJsonCli } = require('./json_cli');
+const { fetchOpenAICompatibleModels } = require('./openai_compatible_models');
 
 const CODEX_COMMANDS = [
   { name: '/mcp', description: 'Show MCP server status' },
@@ -86,24 +87,11 @@ class CodexAdapter {
       options.profileId, 'openai');
     if (profileKey?.key) {
       try {
-        const res = await fetch(openAIModelsUrl(profileKey.baseUrl), {
-          headers: {
-            authorization: `Bearer ${profileKey.key}`,
-            accept: 'application/json',
-          },
-          signal: AbortSignal.timeout(8000),
+        const models = await fetchOpenAICompatibleModels({
+          apiKey: profileKey.key,
+          baseUrl: profileKey.baseUrl,
         });
-        if (res.ok) {
-          const body = await res.json();
-          const models = readOpenAIModels(body)
-            .filter((model) => model.id)
-            .map((model) => ({
-              id: model.id,
-              displayName: model.display_name || model.name || model.id,
-              raw: model,
-            }));
-          if (models.length > 0) return models;
-        }
+        if (models.length > 0) return models;
       } catch (err) {
         console.warn(`[codex] Failed to fetch models from OpenAI profile: ${err.message}`);
       }
@@ -167,9 +155,12 @@ class CodexAdapter {
 }
 
 function buildCodexArgs(session) {
-  const sandbox = (session.raw && session.raw.sandbox) || process.env.CODEX_SANDBOX || 'workspace-write';
+  const sandbox = normalizeCodexSandbox(
+    (session.raw && session.raw.sandbox) || process.env.CODEX_SANDBOX,
+  );
+  const bypassSandbox = sandbox === 'danger-full-access';
   const args = session.agentSessionId
-    ? ['exec', 'resume', '--json', '--skip-git-repo-check']
+    ? ['exec', 'resume', '--json']
     : [
         'exec',
         '--json',
@@ -177,14 +168,31 @@ function buildCodexArgs(session) {
         'never',
         '--cd',
         session.directory,
-        '--sandbox',
-        sandbox,
-        '--skip-git-repo-check',
       ];
+  if (bypassSandbox) {
+    args.push('--dangerously-bypass-approvals-and-sandbox');
+  } else if (!session.agentSessionId) {
+    args.push('--sandbox', sandbox);
+  }
+  args.push('--skip-git-repo-check');
   if (session.modelId) args.push('--model', session.modelId);
   if (session.agentSessionId) args.push(session.agentSessionId);
   args.push('-');
   return args;
+}
+
+function normalizeCodexSandbox(value) {
+  switch (value) {
+    case 'read-only':
+    case 'workspace-write':
+    case 'danger-full-access':
+      return value;
+    case 'full-auto':
+    case 'bypassPermissions':
+      return 'danger-full-access';
+    default:
+      return 'workspace-write';
+  }
 }
 
 function compactCodexModel(model) {
@@ -198,20 +206,9 @@ function compactCodexModel(model) {
   };
 }
 
-function openAIModelsUrl(baseUrl) {
-  const root = (baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  return `${root}/models`;
-}
-
-function readOpenAIModels(body) {
-  if (Array.isArray(body)) return body;
-  if (Array.isArray(body?.data)) return body.data;
-  if (Array.isArray(body?.models)) return body.models;
-  return [];
-}
-
 module.exports = {
   CodexAdapter,
   CODEX_COMMANDS,
   buildCodexArgs,
+  normalizeCodexSandbox,
 };

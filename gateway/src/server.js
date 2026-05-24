@@ -7,6 +7,7 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 
 const { AgentRegistry } = require('./agents');
+const { normalizeCodexSandbox } = require('./agents/codex');
 const { ProfileStore, maskProfile } = require('./config');
 const {
   listOfficialCredentials,
@@ -639,6 +640,30 @@ async function handleLocalCommand(text, session, store, bus) {
       await store.appendMessage(session.id, msg);
       emit(bus, 'message.created', session, { message: msg }, msg);
       emit(bus, 'message.completed', session, { message: msg }, msg);
+      return true;
+    }
+    case '/permissions': {
+      const [, requested = ''] = trimmed.split(/\s+/, 2);
+      if (session.agentId !== 'codex' || !requested) return false;
+
+      const sandbox = normalizeCodexSandbox(requested);
+      const updated = await store.updateSession(session.id, {
+        raw: { sandbox },
+      });
+      if (updated) {
+        emit(bus, 'session.updated', updated, { session: updated });
+      }
+      const detail = sandbox === 'danger-full-access'
+        ? 'Codex permissions set to danger-full-access. New turns in this session will bypass approvals and sandboxing.'
+        : `Codex permissions set to ${sandbox}.`;
+      const msg = createTextMessage({
+        sessionId: session.id,
+        role: 'assistant',
+        text: detail,
+      });
+      await store.appendMessage(session.id, msg);
+      emit(bus, 'message.created', updated || session, { message: msg }, msg);
+      emit(bus, 'message.completed', updated || session, { message: msg }, msg);
       return true;
     }
     default:

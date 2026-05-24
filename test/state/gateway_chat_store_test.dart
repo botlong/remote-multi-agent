@@ -36,6 +36,95 @@ void main() {
     expect(message!.orderedParts.single.id, 'm1_text');
   });
 
+  test('activity.updated inserts a renderable activity item', () async {
+    final controller = GatewayChatStore(
+      client: _FakeGatewayClient(
+        eventsStream: Stream<GatewayEvent>.fromIterable([
+          const GatewayEvent(
+            type: 'activity.updated',
+            sessionId: 's1',
+            agentId: 'codex',
+            timestampMs: 1,
+            data: <String, dynamic>{
+              'activity': <String, dynamic>{
+                'id': 'a1',
+                'kind': 'command',
+                'status': 'running',
+                'title': 'Running npm test',
+                'command': 'npm test',
+                'sequence': 1,
+              },
+            },
+            raw: <String, dynamic>{},
+            sseEvent: 'message',
+          ),
+        ]),
+      ),
+      sessionId: 's1',
+    );
+    addTearDown(controller.dispose);
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state.activities, hasLength(1));
+    expect(controller.state.activities.single.id, 'a1');
+    expect(controller.state.activities.single.command, 'npm test');
+    expect(controller.state.activeTool?.name, 'npm test');
+  });
+
+  test('activity.updated appends output and completes existing item', () async {
+    final controller = GatewayChatStore(
+      client: _FakeGatewayClient(
+        eventsStream: Stream<GatewayEvent>.fromIterable([
+          const GatewayEvent(
+            type: 'activity.updated',
+            sessionId: 's1',
+            agentId: 'codex',
+            timestampMs: 1,
+            data: <String, dynamic>{
+              'activity': <String, dynamic>{
+                'id': 'a1',
+                'kind': 'command',
+                'status': 'running',
+                'title': 'Running npm test',
+                'command': 'npm test',
+                'sequence': 1,
+              },
+            },
+            raw: <String, dynamic>{},
+            sseEvent: 'message',
+          ),
+          const GatewayEvent(
+            type: 'activity.updated',
+            sessionId: 's1',
+            agentId: 'codex',
+            timestampMs: 2,
+            data: <String, dynamic>{
+              'activity': <String, dynamic>{
+                'id': 'a1',
+                'kind': 'command',
+                'status': 'completed',
+                'outputDelta': 'ok\n',
+                'sequence': 1,
+              },
+            },
+            raw: <String, dynamic>{},
+            sseEvent: 'message',
+          ),
+        ]),
+      ),
+      sessionId: 's1',
+    );
+    addTearDown(controller.dispose);
+
+    await Future<void>.delayed(Duration.zero);
+
+    final activity = controller.state.activities.single;
+    expect(activity.status, ActivityStatus.completed);
+    expect(activity.output, 'ok\n');
+    expect(controller.state.activeTool, isNull);
+  });
+
   test('REST reload updates message status even when part count is unchanged',
       () async {
     final client = _FakeGatewayClient(

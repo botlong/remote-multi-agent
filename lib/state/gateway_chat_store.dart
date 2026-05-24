@@ -44,6 +44,145 @@ class TerminalLine {
   final int timestampMs;
 }
 
+enum ActivityKind {
+  status,
+  command,
+  tool,
+  output,
+  checklist;
+
+  static ActivityKind from(String? raw) => switch (raw) {
+        'command' => ActivityKind.command,
+        'tool' => ActivityKind.tool,
+        'output' => ActivityKind.output,
+        'checklist' => ActivityKind.checklist,
+        _ => ActivityKind.status,
+      };
+}
+
+enum ActivityStatus {
+  running,
+  completed,
+  error,
+  info;
+
+  static ActivityStatus from(String? raw) => switch (raw) {
+        'running' => ActivityStatus.running,
+        'completed' => ActivityStatus.completed,
+        'error' => ActivityStatus.error,
+        _ => ActivityStatus.info,
+      };
+
+  bool get isTerminal => this == completed || this == error;
+}
+
+@immutable
+class ActivityItem {
+  const ActivityItem({
+    required this.id,
+    required this.kind,
+    required this.status,
+    required this.title,
+    required this.sequence,
+    this.command,
+    this.tool,
+    this.stream,
+    this.output = '',
+    this.outputDelta = '',
+    this.timestampMs,
+  });
+
+  final String id;
+  final ActivityKind kind;
+  final ActivityStatus status;
+  final String title;
+  final int sequence;
+  final String? command;
+  final String? tool;
+  final String? stream;
+  final String output;
+  final String outputDelta;
+  final int? timestampMs;
+
+  factory ActivityItem.fromJson(
+    Map<String, dynamic> json, {
+    int? timestampMs,
+  }) {
+    final id = json['id'] as String? ?? '';
+    final kind = ActivityKind.from(json['kind'] as String?);
+    final status = ActivityStatus.from(json['status'] as String?);
+    final command = _stringOrNull(json['command']);
+    final tool = _stringOrNull(json['tool']);
+    final stream = _stringOrNull(json['stream']);
+    final output = _stringOrNull(json['output']) ?? '';
+    final outputDelta = _stringOrNull(json['outputDelta']) ?? '';
+    final title = _stringOrNull(json['title']) ??
+        command ??
+        tool ??
+        (stream != null ? '$stream output' : kind.name);
+    return ActivityItem(
+      id: id,
+      kind: kind,
+      status: status,
+      title: title,
+      sequence: _readInt(json['sequence']) ?? 0,
+      command: command,
+      tool: tool,
+      stream: stream,
+      output: output,
+      outputDelta: outputDelta,
+      timestampMs: timestampMs,
+    );
+  }
+
+  ActivityItem merge(ActivityItem incoming) {
+    final nextOutput = incoming.outputDelta.isNotEmpty
+        ? output + incoming.outputDelta
+        : incoming.output.isNotEmpty
+            ? incoming.output
+            : output;
+    return ActivityItem(
+      id: id,
+      kind: incoming.kind,
+      status: incoming.status,
+      title: incoming.title.isNotEmpty ? incoming.title : title,
+      sequence: incoming.sequence == 0 ? sequence : incoming.sequence,
+      command: incoming.command ?? command,
+      tool: incoming.tool ?? tool,
+      stream: incoming.stream ?? stream,
+      output: nextOutput,
+      timestampMs: incoming.timestampMs ?? timestampMs,
+    );
+  }
+
+  ActivityItem normalizeOutput() {
+    if (output.isNotEmpty || outputDelta.isEmpty) return this;
+    return ActivityItem(
+      id: id,
+      kind: kind,
+      status: status,
+      title: title,
+      sequence: sequence,
+      command: command,
+      tool: tool,
+      stream: stream,
+      output: outputDelta,
+      timestampMs: timestampMs,
+    );
+  }
+}
+
+String? _stringOrNull(Object? value) {
+  if (value is String && value.isNotEmpty) return value;
+  return null;
+}
+
+int? _readInt(Object? value) {
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
 @immutable
 class ActiveTool {
   const ActiveTool({
@@ -71,6 +210,7 @@ class GatewayChatState {
     required this.isStreaming,
     required this.connection,
     required this.terminalLines,
+    required this.activities,
     this.error,
     this.usage,
     this.activeTool,
@@ -82,6 +222,7 @@ class GatewayChatState {
   final bool isStreaming;
   final GatewayChatConnectionState connection;
   final List<TerminalLine> terminalLines;
+  final List<ActivityItem> activities;
   final String? error;
   final TokenUsage? usage;
   final ActiveTool? activeTool;
@@ -101,6 +242,7 @@ class GatewayChatState {
         isStreaming: false,
         connection: GatewayChatConnectionState.connecting,
         terminalLines: const <TerminalLine>[],
+        activities: const <ActivityItem>[],
         activeTool: null,
       );
 
@@ -111,6 +253,7 @@ class GatewayChatState {
     bool? isStreaming,
     GatewayChatConnectionState? connection,
     List<TerminalLine>? terminalLines,
+    List<ActivityItem>? activities,
     String? error,
     bool clearError = false,
     TokenUsage? usage,
@@ -124,6 +267,7 @@ class GatewayChatState {
         isStreaming: isStreaming ?? this.isStreaming,
         connection: connection ?? this.connection,
         terminalLines: terminalLines ?? this.terminalLines,
+        activities: activities ?? this.activities,
         error: clearError ? null : (error ?? this.error),
         usage: usage ?? this.usage,
         activeTool: clearActiveTool ? null : (activeTool ?? this.activeTool),
@@ -287,7 +431,11 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
       case 'session.updated':
         _onSession(event.data);
       case 'session.started':
-        state = state.copyWith(isStreaming: true);
+        state = state.copyWith(
+          isStreaming: true,
+          activities: const <ActivityItem>[],
+          clearActiveTool: true,
+        );
       case 'session.completed':
         state = state.copyWith(isStreaming: false, clearActiveTool: true);
         showAppNotification(
@@ -325,6 +473,8 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
         }
       case 'command.updated':
         _onCommandUpdated(event);
+      case 'activity.updated':
+        _onActivityUpdated(event);
       case 'status.updated':
         state = state.copyWith(
           isStreaming: event.data['status']?.toString() == 'running',
@@ -366,6 +516,7 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
   }
 
   static const _maxTerminalLines = 500;
+  static const _maxActivities = 80;
 
   void _onCommandUpdated(GatewayEvent event) {
     final stream = event.data['stream'] as String? ?? 'stdout';
@@ -383,6 +534,53 @@ class GatewayChatStore extends StateNotifier<GatewayChatState> {
       next = next.sublist(next.length - _maxTerminalLines);
     }
     state = state.copyWith(terminalLines: next);
+  }
+
+  void _onActivityUpdated(GatewayEvent event) {
+    final rawActivity = event.data['activity'];
+    if (rawActivity is! Map) return;
+    final incoming = ActivityItem.fromJson(
+      rawActivity.cast<String, dynamic>(),
+      timestampMs: event.timestampMs,
+    );
+    if (incoming.id.isEmpty) return;
+
+    final next = <ActivityItem>[...state.activities];
+    final index = next.indexWhere((item) => item.id == incoming.id);
+    final ActivityItem updated;
+    if (index == -1) {
+      updated = incoming.normalizeOutput();
+      next.add(updated);
+    } else {
+      updated = next[index].merge(incoming);
+      next[index] = updated;
+    }
+    next.sort((a, b) {
+      final bySequence = a.sequence.compareTo(b.sequence);
+      if (bySequence != 0) return bySequence;
+      return (a.timestampMs ?? 0).compareTo(b.timestampMs ?? 0);
+    });
+    final bounded = next.length > _maxActivities
+        ? next.sublist(next.length - _maxActivities)
+        : next;
+
+    if (updated.status == ActivityStatus.running &&
+        (updated.kind == ActivityKind.command ||
+            updated.kind == ActivityKind.tool)) {
+      state = state.copyWith(
+        activities: bounded,
+        activeTool: ActiveTool(
+          name: updated.command ?? updated.tool ?? updated.title,
+          info: updated.command != null ? null : updated.title,
+        ),
+      );
+      return;
+    }
+
+    state = state.copyWith(
+      activities: bounded,
+      clearActiveTool: updated.status.isTerminal,
+    );
   }
 
   void _onMessage(Map<String, dynamic> data) {

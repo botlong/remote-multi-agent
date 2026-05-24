@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../api/gateway_client.dart';
 import '../../models/agent.dart';
 import '../../state/agent_config_filter.dart';
+import '../../state/agent_settings_compat.dart';
 import '../../state/settings_store.dart';
 import '../widgets/model_picker.dart';
 import 'home_page.dart';
@@ -598,6 +599,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       );
       return true;
     } catch (err) {
+      if (isAgentSettingsUnsupported(err)) {
+        return true;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to save agent settings: $err')),
