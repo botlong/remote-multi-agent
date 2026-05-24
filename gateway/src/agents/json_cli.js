@@ -40,6 +40,7 @@ function runJsonCli({
     stderrLines: [],
     activitySeq: 0,
     activitiesById: new Map(),
+    claudeToolBlocks: new Map(),
   };
   readLines(child.stdout, (line) => {
     const raw = parseJsonLine(line);
@@ -53,7 +54,8 @@ function runJsonCli({
       data: { stream: 'stdout', eventType },
       raw,
     });
-    const activity = activityFromRaw(raw, state, eventType);
+    const toolCall = extractToolCall(raw, state);
+    const activity = activityFromRaw(raw, state, eventType, toolCall);
     if (activity) {
       onEvent({
         type: 'activity.updated',
@@ -68,10 +70,7 @@ function runJsonCli({
       state.sawText = true;
       onText(delta);
     }
-    if (onToolCall) {
-      const toolCall = extractToolCall(raw);
-      if (toolCall) onToolCall(toolCall);
-    }
+    if (onToolCall && toolCall) onToolCall(toolCall);
     if (onUsage) {
       const usage = extractUsage(raw);
       if (usage) onUsage(usage);
@@ -135,8 +134,7 @@ function runJsonCli({
   };
 }
 
-function activityFromRaw(raw, state, eventType) {
-  const toolCall = extractToolCall(raw);
+function activityFromRaw(raw, state, eventType, toolCall = null) {
   if (toolCall) return activityFromToolCall(toolCall, state);
 
   const text = extractStatusText(raw, eventType);
@@ -364,7 +362,27 @@ function contentArrayText(content) {
  *          or content[].type === 'tool_use'
  * OpenCode: handled natively via SSE part events.
  */
-function extractToolCall(raw) {
+function extractToolCall(raw, state = null) {
+  const streamEvent = raw.type === 'stream_event' && raw.event
+    ? raw.event
+    : null;
+
+  if (raw.item?.type === 'command_execution' && raw.item.command) {
+    const output = raw.item.aggregated_output || '';
+    return {
+      name: 'shell',
+      input: { command: raw.item.command },
+      status: codexCommandStatus(raw.item),
+      callId: raw.item.id,
+      ...(output ? { output } : {}),
+    };
+  }
+
+  if (streamEvent) {
+    const toolCall = extractClaudeStreamToolCall(streamEvent, state);
+    if (toolCall) return toolCall;
+  }
+
   // Codex function_call at top level
   if (raw.type === 'function_call' && raw.name) {
     return {
@@ -408,6 +426,26 @@ function extractToolCall(raw) {
       toolUseId: raw.tool_use_id,
     };
   }
+  if (raw.message && Array.isArray(raw.message.content)) {
+    for (const block of raw.message.content) {
+      if (block?.type === 'tool_use' && block.name) {
+        return {
+          name: block.name,
+          input: block.input || {},
+          status: 'running',
+          toolUseId: block.id,
+        };
+      }
+      if (block?.type === 'tool_result') {
+        return {
+          name: block.name || 'tool',
+          output: block.content,
+          status: block.is_error ? 'error' : 'completed',
+          toolUseId: block.tool_use_id,
+        };
+      }
+    }
+  }
   // Codex item-level tool calls
   if (raw.item && Array.isArray(raw.item.content)) {
     for (const block of raw.item.content) {
@@ -421,6 +459,52 @@ function extractToolCall(raw) {
       }
     }
   }
+  return null;
+}
+
+function codexCommandStatus(item) {
+  if (item.status === 'in_progress' || item.status === 'running') return 'running';
+  if (item.status === 'failed' || item.status === 'error') return 'error';
+  if (typeof item.exit_code === 'number' && item.exit_code !== 0) return 'error';
+  if (item.status === 'completed' || item.status === 'complete') return 'completed';
+  return 'running';
+}
+
+function extractClaudeStreamToolCall(event, state) {
+  if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+    const indexKey = String(event.index ?? event.content_block.id);
+    const block = {
+      id: event.content_block.id,
+      name: event.content_block.name,
+      json: '',
+    };
+    state?.claudeToolBlocks?.set(indexKey, block);
+    return {
+      name: block.name,
+      input: event.content_block.input || {},
+      status: 'running',
+      toolUseId: block.id,
+    };
+  }
+
+  if (
+    event.type === 'content_block_delta' &&
+    event.delta?.type === 'input_json_delta'
+  ) {
+    const indexKey = String(event.index);
+    const block = state?.claudeToolBlocks?.get(indexKey);
+    if (!block) return null;
+    block.json += event.delta.partial_json || '';
+    const input = tryParseJson(block.json);
+    if (!input) return null;
+    return {
+      name: block.name,
+      input,
+      status: 'running',
+      toolUseId: block.id,
+    };
+  }
+
   return null;
 }
 

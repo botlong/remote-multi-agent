@@ -198,3 +198,76 @@ test('runJsonCli emits activity for stderr lines', async () => {
   assert.equal(activities[0].stream, 'stderr');
   assert.equal(activities[0].outputDelta, 'warning line\n');
 });
+
+test('runJsonCli maps Codex command_execution items to tool calls and activity', async () => {
+  const script = [
+    'console.log(JSON.stringify({type:"item.started",item:{id:"item_1",type:"command_execution",command:"npm test",aggregated_output:"",exit_code:null,status:"in_progress"}}));',
+    'console.log(JSON.stringify({type:"item.completed",item:{id:"item_1",type:"command_execution",command:"npm test",aggregated_output:"pass\\n",exit_code:0,status:"completed"}}));',
+    'process.exit(0);',
+  ].join('');
+  const tools = [];
+  const activities = [];
+  const result = await new Promise((resolve) => {
+    runJsonCli({
+      command: { command: process.execPath },
+      args: ['-e', script],
+      cwd: process.cwd(),
+      stdin: null,
+      onEvent: (event) => {
+        if (event.type === 'activity.updated') {
+          activities.push(event.data.activity);
+        }
+      },
+      onText: () => {},
+      onToolCall: (tool) => tools.push(tool),
+      onExit: resolve,
+    });
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(tools.length, 2);
+  assert.deepEqual(tools[0], {
+    name: 'shell',
+    input: { command: 'npm test' },
+    status: 'running',
+    callId: 'item_1',
+  });
+  assert.equal(tools[1].name, 'shell');
+  assert.deepEqual(tools[1].input, { command: 'npm test' });
+  assert.equal(tools[1].output, 'pass\n');
+  assert.equal(tools[1].status, 'completed');
+  assert.equal(tools[1].callId, 'item_1');
+  assert.equal(activities[0].title, 'Running npm test');
+  assert.equal(activities[1].title, 'Ran npm test');
+});
+
+test('runJsonCli maps Claude stream-json tool use and result to tool calls', async () => {
+  const script = [
+    'console.log(JSON.stringify({type:"stream_event",event:{type:"content_block_start",index:0,content_block:{type:"tool_use",id:"tool_1",name:"Bash",input:{}}}}));',
+    'console.log(JSON.stringify({type:"stream_event",event:{type:"content_block_delta",index:0,delta:{type:"input_json_delta",partial_json:JSON.stringify({command:"npm test"})}}}));',
+    'console.log(JSON.stringify({type:"user",message:{role:"user",content:[{type:"tool_result",tool_use_id:"tool_1",content:"pass\\n",is_error:false}]}}));',
+    'process.exit(0);',
+  ].join('');
+  const tools = [];
+  const result = await new Promise((resolve) => {
+    runJsonCli({
+      command: { command: process.execPath },
+      args: ['-e', script],
+      cwd: process.cwd(),
+      stdin: null,
+      onEvent: () => {},
+      onText: () => {},
+      onToolCall: (tool) => tools.push(tool),
+      onExit: resolve,
+    });
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(tools.length, 3);
+  assert.equal(tools[0].name, 'Bash');
+  assert.equal(tools[0].status, 'running');
+  assert.equal(tools[0].toolUseId, 'tool_1');
+  assert.deepEqual(tools[1].input, { command: 'npm test' });
+  assert.equal(tools[1].status, 'running');
+  assert.equal(tools[2].output, 'pass\n');
+  assert.equal(tools[2].status, 'completed');
+  assert.equal(tools[2].toolUseId, 'tool_1');
+});
