@@ -127,7 +127,7 @@ class ClaudeCodeAdapter {
     ]);
   }
 
-  run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
+  run({ session, prompt, onEvent, onText, onToolCall, onAgentSessionId, onExit }) {
     const isSlashCommand = prompt.trim().startsWith('/');
     const withResume = Boolean(session.agentSessionId);
     if (isSlashCommand && !withResume) {
@@ -143,12 +143,13 @@ class ClaudeCodeAdapter {
       withResume,
       onEvent,
       onText,
+      onToolCall,
       onAgentSessionId,
       onExit,
     });
   }
 
-  _runOnce({ session, prompt, withResume, onEvent, onText, onAgentSessionId, onExit }) {
+  _runOnce({ session, prompt, withResume, onEvent, onText, onToolCall, onAgentSessionId, onExit }) {
     const args = [
       '-p',
       '--output-format',
@@ -190,6 +191,7 @@ class ClaudeCodeAdapter {
           withResume: false,
           onEvent,
           onText,
+          onToolCall,
           onAgentSessionId,
           onExit,
         });
@@ -208,6 +210,7 @@ class ClaudeCodeAdapter {
       agentId: this.id,
       onEvent,
       onText,
+      onToolCall,
       onAgentSessionId,
       onExit: wrappedExit,
     });

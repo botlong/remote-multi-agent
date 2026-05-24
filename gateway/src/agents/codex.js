@@ -126,7 +126,7 @@ class CodexAdapter {
     return commands(CODEX_COMMANDS);
   }
 
-  run({ session, prompt, onEvent, onText, onAgentSessionId, onExit }) {
+  run({ session, prompt, onEvent, onText, onToolCall, onAgentSessionId, onExit }) {
     const args = buildCodexArgs(session);
 
     const profileKey = this.profileStore?.getKeyForProviderById(
@@ -148,6 +148,7 @@ class CodexAdapter {
       agentId: this.id,
       onEvent,
       onText,
+      onToolCall,
       onAgentSessionId,
       onExit,
     });

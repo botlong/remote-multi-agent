@@ -1,9 +1,17 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 
-const { buildCodexArgs, runJsonCli } = require('../src/agents');
+const {
+  ClaudeCodeAdapter,
+  CodexAdapter,
+  buildCodexArgs,
+  runJsonCli,
+} = require('../src/agents');
 
 test('Codex new sessions skip git repository checks', () => {
   const args = buildCodexArgs({
@@ -271,3 +279,118 @@ test('runJsonCli maps Claude stream-json tool use and result to tool calls', asy
   assert.equal(tools[2].status, 'completed');
   assert.equal(tools[2].toolUseId, 'tool_1');
 });
+
+test('CodexAdapter forwards parsed tool calls from runJsonCli', async () => {
+  const scriptPath = writeJsonCliFixture([
+    {
+      type: 'item.started',
+      item: {
+        id: 'item_1',
+        type: 'command_execution',
+        command: 'npm test',
+        aggregated_output: '',
+        exit_code: null,
+        status: 'in_progress',
+      },
+    },
+    {
+      type: 'item.completed',
+      item: {
+        id: 'item_1',
+        type: 'command_execution',
+        command: 'npm test',
+        aggregated_output: 'pass\n',
+        exit_code: 0,
+        status: 'completed',
+      },
+    },
+  ]);
+  const adapter = new CodexAdapter();
+  adapter.command = { command: process.execPath, prefixArgs: [scriptPath], shell: false };
+  const tools = [];
+  const result = await new Promise((resolve) => {
+    adapter.run({
+      session: fakeSession('codex'),
+      prompt: 'hello',
+      onEvent: () => {},
+      onText: () => {},
+      onToolCall: (tool) => tools.push(tool),
+      onAgentSessionId: () => {},
+      onExit: resolve,
+    });
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(tools.length, 2);
+  assert.equal(tools[0].callId, 'item_1');
+  assert.equal(tools[1].output, 'pass\n');
+});
+
+test('ClaudeCodeAdapter forwards parsed tool calls from runJsonCli', async () => {
+  const scriptPath = writeJsonCliFixture([
+    {
+      type: 'stream_event',
+      event: {
+        type: 'content_block_start',
+        index: 0,
+        content_block: {
+          type: 'tool_use',
+          id: 'tool_1',
+          name: 'Bash',
+          input: {},
+        },
+      },
+    },
+    {
+      type: 'stream_event',
+      event: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: {
+          type: 'input_json_delta',
+          partial_json: JSON.stringify({ command: 'npm test' }),
+        },
+      },
+    },
+  ]);
+  const adapter = new ClaudeCodeAdapter();
+  adapter.command = { command: process.execPath, prefixArgs: [scriptPath], shell: false };
+  const tools = [];
+  const result = await new Promise((resolve) => {
+    adapter.run({
+      session: fakeSession('claude-code'),
+      prompt: 'hello',
+      onEvent: () => {},
+      onText: () => {},
+      onToolCall: (tool) => tools.push(tool),
+      onAgentSessionId: () => {},
+      onExit: resolve,
+    });
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(tools.length, 2);
+  assert.equal(tools[0].toolUseId, 'tool_1');
+  assert.deepEqual(tools[1].input, { command: 'npm test' });
+});
+
+function writeJsonCliFixture(events) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rma-json-cli-'));
+  const file = path.join(dir, 'fixture.js');
+  const lines = events
+    .map((event) => `console.log(${JSON.stringify(JSON.stringify(event))});`)
+    .join('\n');
+  fs.writeFileSync(file, `${lines}\nprocess.exit(0);\n`);
+  return file;
+}
+
+function fakeSession(agentId) {
+  return {
+    id: 's1',
+    agentId,
+    directory: process.cwd(),
+    modelId: null,
+    agentSessionId: null,
+    raw: {},
+  };
+}
